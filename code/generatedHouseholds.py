@@ -8,8 +8,6 @@ import random
 import json
 import time
 from datetime import timedelta
-import matplotlib.pyplot as plt
-import seaborn as sns
 import numpy as np
 from collections import Counter
 import shutil  # For directory operations
@@ -26,24 +24,6 @@ device = torch.device('cuda' if torch.cuda.is_available() else
                       'mps' if hasattr(torch.backends, 'mps') and torch.backends.mps.is_available() else 
                       'cpu')
 print(f"Using device: {device}")
-
-substring_mapping = {
-    'SP-Elder': '1PE',
-    'SP-Adult': '1PA',
-    'OF-Elder': '1FE',
-    'OF-Married-0C': '1FM-0C',
-    'OF-Married-2C': '1FM-2C',
-    'OF-Married-ND': '1FM-nA',
-    'OF-Cohabiting-0C': '1FC-0C',
-    'OF-Cohabiting-2C': '1FC-2C',
-    'OF-Cohabiting-ND': '1FC-nA',
-    'OF-Lone-2C': '1FL-2C',
-    'OF-Lone-ND': '1FL-nA',
-    'OH-2C': '1H-2C',
-    'OH-Student': '1H-nS',
-    'OH-Elder': '1H-nE',
-    'OH-Adult': '1H-nA',
-}
 
 torch.set_printoptions(edgeitems=torch.inf)
 
@@ -71,26 +51,21 @@ def get_target_tensors(cross_table, hh_categories, hh_map, feature_categories, f
 
 # Load the data from individual tables
 current_dir = os.path.dirname(os.path.abspath(__file__))
-ethnicity_df = pd.read_csv(os.path.join(current_dir, '../../data/preprocessed-data/New-Tables/individual/Ethnicity.csv'))
-religion_df = pd.read_csv(os.path.join(current_dir, '../../data/preprocessed-data/New-Tables/individual/Religion.csv'))
-# hhcomp_df = pd.read_csv(os.path.join(current_dir, '../../data/preprocessed-data/New-Tables/individual/HH_composition.csv'))
-hhcomp_df = pd.read_csv(os.path.join(current_dir, '../../data/preprocessed-data/New-Tables/individual/HH_composition_Households.csv'))
-hhcomp_by_ethnicity_df = pd.read_csv(os.path.join(current_dir, '../../data/preprocessed-data/New-Tables/crosstables/HH_composition_by_ethnicity.csv'))
-hhcomp_by_religion_df = pd.read_csv(os.path.join(current_dir, '../../data/preprocessed-data/New-Tables/crosstables/HH_composition_by_religion.csv'))
-
-# ethnicity_df = pd.read_csv(os.path.join(current_dir, '../../data/preprocessed-data/individual/Ethnic.csv'))
-# religion_df = pd.read_csv(os.path.join(current_dir, '../../data/preprocessed-data/individual/Religion.csv'))
-# hhcomp_df = pd.read_csv(os.path.join(current_dir, '../../data/preprocessed-data/individual/HH_compositions_old.csv'))
-# hhcomp_by_ethnicity_df = pd.read_csv(os.path.join(current_dir, '../../data/preprocessed-data/crosstables/HH_composition_by_ethnicity_new.csv'))
-# hhcomp_by_religion_df = pd.read_csv(os.path.join(current_dir, '../../data/preprocessed-data/crosstables/HH_composition_by_religion_new.csv'))
+ethnicity_df = pd.read_csv(os.path.join(current_dir, '../data/preprocessed-data/individuals/Ethnicity.csv'))
+religion_df = pd.read_csv(os.path.join(current_dir, '../data/preprocessed-data/individuals/Religion.csv'))
+# hhcomp_df = pd.read_csv(os.path.join(current_dir, '../data/preprocessed-data/individuals/HH_composition.csv'))
+# hhcomp_df = pd.read_csv(os.path.join(current_dir, '../data/preprocessed-data/individuals/HH_composition_Households.csv'))
+hhcomp_df = pd.read_csv(os.path.join(current_dir, '../data/preprocessed-data/individuals/HH_composition_Updated.csv'))
+# hhcomp_by_ethnicity_df = pd.read_csv(os.path.join(current_dir, '../data/preprocessed-data/crosstables/HH_composition_by_ethnicity.csv'))
+# hhcomp_by_religion_df = pd.read_csv(os.path.join(current_dir, '../data/preprocessed-data/crosstables/HH_composition_by_religion.csv'))
+hhcomp_by_religion_df = pd.read_csv(os.path.join(current_dir, '../data/preprocessed-data/crosstables/HH_composition_by_religion_Updated.csv'))
+hhcomp_by_ethnicity_df = pd.read_csv(os.path.join(current_dir, '../data/preprocessed-data/crosstables/HH_composition_by_ethnicity_Updated.csv'))
 
 # Define the Oxford areas
 oxford_areas = ['E02005924']
 # oxford_areas = ['E02005923']
 # oxford_areas = ['E02005925']
 
-# ethnicity_categories = ['W0', 'M0', 'A0', 'B0', 'O0']
-# religion_categories = ['C','B','H','J','M','S','OR','NR','NS']
 ethnicity_categories = ['W1', 'W2', 'W3', 'W4', 'M1', 'M2', 'M3', 'M4', 'A1', 'A2', 'A3', 'A4', 'A5', 'B1', 'B2', 'B3', 'O1', 'O2']
 religion_categories = ['C','B','H','J','M','S','O','N','NS']
 
@@ -117,50 +92,23 @@ print(f"Number of households: {num_households}")
 # hhcomp_df['1FL-2C'] = hhcomp_df['1FL-nC']
 # hhcomp_df['1H-2C'] = hhcomp_df['1H-nC']
 # hhcomp_df.drop(columns=['1FM-nC', '1FC-nC', '1FL-nC', '1H-nC', 'total', 'geography code'], inplace=True)
+# hhcomp_df = hhcomp_df.drop(columns=['total', 'geography code'], inplace=True)
 
-# hh_compositions = ['1PE','1PA','1FE','1FM-0C','1FM-2C', '1FM-nA','1FC-0C','1FC-2C','1FC-nA','1FL-nA','1FL-2C','1H-nS','1H-nE','1H-nA', '1H-2C']
-hh_compositions = ['1PE','1PA','1FE','1FM-0C','1FM-nC', '1FM-nA','1FC-0C','1FC-nC','1FC-nA','1FL-nA','1FL-nC','1H-nS','1H-nE','1H-nA', '1H-nC']
-
-# Substring replacement for ethnicity and religion tables
-for col in hhcomp_by_ethnicity_df.columns:
-    for old_substring, new_substring in substring_mapping.items():
-        if old_substring in col:
-            new_col = col.replace(old_substring, new_substring)
-            hhcomp_by_ethnicity_df.rename(columns={col: new_col}, inplace=True)
-            break
-
-for col in hhcomp_by_religion_df.columns:
-    for old_substring, new_substring in substring_mapping.items():
-        if old_substring in col:
-            new_col = col.replace(old_substring, new_substring)
-            hhcomp_by_religion_df.rename(columns={col: new_col}, inplace=True)
-            break
+hh_compositions = ['1PE','1PA','1FE','1FM-0C','1FM-2C', '1FM-nA','1FC-0C','1FC-2C','1FC-nA','1FL-nA','1FL-2C','1H-nS','1H-nE','1H-nA', '1H-2C']
+# hh_compositions = ['1PE','1PA','1FE','1FM-0C','1FM-nC', '1FM-nA','1FC-0C','1FC-nC','1FC-nA','1FL-nA','1FL-nC','1H-nS','1H-nE','1H-nA', '1H-nC']
 
 # Filter and preprocess columns
-filtered_columns = [col for col in hhcomp_by_ethnicity_df.columns if not any(substring in col for substring in ['OF-Married', 'OF-Cohabiting', 'OF-LoneParent'])]
-hhcomp_by_ethnicity_df = hhcomp_by_ethnicity_df[filtered_columns]
-filtered_columns = [col for col in hhcomp_by_religion_df.columns if not any(substring in col for substring in ['OF-Married', 'OF-Cohabiting', 'OF-LoneParent'])]
-hhcomp_by_religion_df = hhcomp_by_religion_df[filtered_columns]
+# filtered_columns = [col for col in hhcomp_by_ethnicity_df.columns if not any(substring in col for substring in ['OF-Married', 'OF-Cohabiting', 'OF-LoneParent'])]
+# hhcomp_by_ethnicity_df = hhcomp_by_ethnicity_df[filtered_columns]
+# filtered_columns = [col for col in hhcomp_by_religion_df.columns if not any(substring in col for substring in ['OF-Married', 'OF-Cohabiting', 'OF-LoneParent'])]
+# hhcomp_by_religion_df = hhcomp_by_religion_df[filtered_columns]
 hhcomp_by_ethnicity_df = hhcomp_by_ethnicity_df.drop(columns = ['total', 'geography code'])
 hhcomp_by_religion_df = hhcomp_by_religion_df.drop(columns = ['total', 'geography code'])
-
-# # Mapping dictionary for religion columns
-# mapping_dict = {
-#     '1PE O': '1PE OR',
-#     '1PE N': '1PE NR',
-#     '1PA O': '1PA OR',
-#     '1PA N': '1PA NR',
-#     # ... complete this mapping ...
-# }
-# hhcomp_by_religion_df.rename(columns=mapping_dict, inplace=True)
 
 # Encode the categories to indices
 ethnicity_map = {category: i for i, category in enumerate(ethnicity_categories)}
 religion_map = {category: i for i, category in enumerate(religion_categories)}
 hh_map = {category: i for i, category in enumerate(hh_compositions)}
-
-# Total number of households from the total column
-# num_households = 4852
 
 # Create household nodes with unique IDs
 households_nodes = torch.arange(num_households).view(num_households, 1).to(device)
@@ -285,10 +233,10 @@ targets.append(
 )
 
 # Hyperparameter Tuning
-# learning_rates = [0.001, 0.0005, 0.0001]
-# hidden_channel_options = [64, 128, 256]
-learning_rates = [0.001]
-hidden_channel_options = [64]
+learning_rates = [0.001, 0.0005, 0.0001]
+hidden_channel_options = [64, 128, 256]
+# learning_rates = [0.001]
+# hidden_channel_options = [64, 128]
 mlp_hidden_dim = 256
 num_epochs = 2000
 # num_epochs = 10
@@ -296,6 +244,15 @@ num_epochs = 2000
 # Results storage
 results = []
 time_results = []
+best_model_info = {
+    'model_state': None,
+    'loss': float('inf'),
+    'accuracy': 0,
+    'predictions': None,
+    'lr': None,
+    'hidden_channels': None,
+    'training_time': None
+}
 
 # Function to train model
 def train_model(lr, hidden_channels, num_epochs, data, targets):
@@ -319,6 +276,8 @@ def train_model(lr, hidden_channels, num_epochs, data, targets):
 
     loss_data = {}
     accuracy_data = {}
+    best_epoch_loss = float('inf')
+    best_epoch_state = None
 
     # Training loop
     for epoch in range(num_epochs):
@@ -341,6 +300,11 @@ def train_model(lr, hidden_channels, num_epochs, data, targets):
                 targets[i][1][0], targets[i][1][1]
             )
         
+        # Store best epoch state
+        if loss.item() < best_epoch_loss:
+            best_epoch_loss = loss.item()
+            best_epoch_state = model.state_dict().copy()
+        
         # Backward pass and optimization
         loss.backward()
         optimizer.step()
@@ -352,6 +316,9 @@ def train_model(lr, hidden_channels, num_epochs, data, targets):
         if (epoch + 1) % 100 == 0:
             print(f'Epoch {epoch+1}/{num_epochs}, Loss: {loss.item():.4f}')
 
+    # Load best epoch state for evaluation
+    model.load_state_dict(best_epoch_state)
+    
     # Evaluate predictions
     model.eval()
     with torch.no_grad():
@@ -380,9 +347,22 @@ def train_model(lr, hidden_channels, num_epochs, data, targets):
             
             # Accumulate accuracy across all target combinations
             net_accuracy += task_net_accuracy
+        
+        avg_accuracy = net_accuracy / len(targets)
+        
+        # Update best model info if this model performs better
+        global best_model_info
+        if avg_accuracy > best_model_info['accuracy'] or (avg_accuracy == best_model_info['accuracy'] and best_epoch_loss < best_model_info['loss']):
+            best_model_info.update({
+                'model_state': best_epoch_state,
+                'loss': best_epoch_loss,
+                'accuracy': avg_accuracy,
+                'predictions': (hh_pred, ethnicity_pred, religion_pred),
+                'lr': lr,
+                'hidden_channels': hidden_channels
+            })
     
-    # Return average accuracy across all target combinations (household-ethnicity and household-religion)
-    return loss.item(), net_accuracy / len(targets), (hh_pred, ethnicity_pred, religion_pred)
+    return best_epoch_loss, avg_accuracy, (hh_pred, ethnicity_pred, religion_pred)
 
 # Run grid search over hyperparameters
 total_start_time = time.time()
@@ -431,70 +411,52 @@ print(f"Total training time: {total_training_time_str}")
 
 # After all runs, display results
 results_df = pd.DataFrame(results)
-print("Hyperparameter tuning results:")
+print("\nHyperparameter tuning results:")
 print(results_df)
 
-# Add total time as a summary row
-total_row = pd.DataFrame([{
-    'learning_rate': 'Total',
-    'hidden_channels': '',
-    'final_loss': '',
-    'average_accuracy': '',
-    'training_time': total_training_time_str
-}])
-summary_df = pd.concat([results_df, total_row], ignore_index=True)
+# Print best model information
+print("\nBest Model Information:")
+print(f"Learning Rate: {best_model_info['lr']}")
+print(f"Hidden Channels: {best_model_info['hidden_channels']}")
+print(f"Best Loss: {best_model_info['loss']:.4f}")
+print(f"Best Accuracy: {best_model_info['accuracy']:.4f}")
 
-# Extract the best model's predictions
-hh_pred, ethnicity_pred, religion_pred = predictions
+# Save best model information and results
+output_dir = os.path.join(current_dir, 'outputs')
+os.makedirs(output_dir, exist_ok=True)
 
-# Create household tensor with attributes
-# Format: [household_id, household_type (composition), ethnicity, religion]
+# Save best model predictions
+best_predictions = {
+    'household_pred': best_model_info['predictions'][0].cpu().numpy(),
+    'ethnicity_pred': best_model_info['predictions'][1].cpu().numpy(),
+    'religion_pred': best_model_info['predictions'][2].cpu().numpy()
+}
+
+# Save hyperparameter results
+results_df.to_csv(os.path.join(output_dir, 'generateHouseholds_results.csv'), index=False)
+
+# Save best model configuration
+best_config = {
+    'learning_rate': best_model_info['lr'],
+    'hidden_channels': best_model_info['hidden_channels'],
+    'loss': best_model_info['loss'],
+    'accuracy': best_model_info['accuracy']
+}
+
+# Extract the best model's predictions for visualization
+hh_pred, ethnicity_pred, religion_pred = best_model_info['predictions']
+
+# Create household tensor with attributes from best model
 household_tensor = torch.zeros(num_households, 4, device=device)
 household_tensor[:, 0] = torch.arange(num_households, device=device)  # Household ID
 household_tensor[:, 1] = hh_pred  # Household composition
 household_tensor[:, 2] = ethnicity_pred  # Ethnicity
 household_tensor[:, 3] = religion_pred  # Religion
 
-# Create output directory if it doesn't exist
-output_dir = os.path.join(current_dir, 'outputs')
-os.makedirs(output_dir, exist_ok=True)
-
-# Save household tensor - move to CPU for saving
+# Save household tensor
 household_tensor_path = os.path.join(output_dir, 'household_nodes.pt')
 torch.save(household_tensor.cpu(), household_tensor_path)
-print(f"Household tensor saved to {household_tensor_path}")
-
-# Save the results to a CSV for future reference
-output_path = os.path.join(current_dir, 'outputs', 'generateHouseholds_hyperparameter_tuning_results.csv')
-os.makedirs(os.path.dirname(output_path), exist_ok=True)
-summary_df.to_csv(output_path, index=False)
-print(f"Results saved to {output_path}")
-
-# Create detailed timing report as text file
-with open(os.path.join(output_dir, 'households_training_time_results.txt'), 'w') as f:
-    f.write("Hyperparameter Training Time Results\n")
-    f.write("==================================\n\n")
-    
-    for i, result in enumerate(time_results):
-        f.write(f"Combination {i+1}:\n")
-        f.write(f"  Learning Rate: {result['learning_rate']}\n")
-        f.write(f"  Hidden Channels: {result['hidden_channels']}\n")
-        f.write(f"  Training Time: {result['training_time']}\n")
-        f.write("\n")
-    
-    f.write("==================================\n")
-    f.write(f"Total Training Time: {total_training_time_str}\n")
-    f.write("==================================\n\n")
-    
-    f.write("Final Results Table:\n")
-    f.write(summary_df.to_string(index=False))
-    f.write("\n\n")
-    
-    # Add device information
-    f.write(f"Training Device: {device}\n")
-    f.write(f"Number of Epochs: {num_epochs}\n")
-
-print("Training time results saved to households_training_time_results.txt")
+print(f"\nBest model outputs saved to {output_dir}")
 
 # Get the predicted household compositions, ethnicities, and religions
 hh_comp_pred_indices = hh_pred.cpu().numpy()
