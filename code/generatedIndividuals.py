@@ -480,7 +480,7 @@ output_dir = os.path.join(current_dir, 'outputs')
 os.makedirs(output_dir, exist_ok=True)
 
 # Save best model state
-torch.save(best_model_info['model_state'], os.path.join(output_dir, 'best_individual_model_state.pt'))
+# torch.save(best_model_info['model_state'], os.path.join(output_dir, 'best_individual_model_state.pt'))
 
 # Save best model predictions
 best_predictions = {
@@ -490,7 +490,7 @@ best_predictions = {
     'religion_pred': best_model_info['predictions'][3].cpu().numpy(),
     'marital_pred': best_model_info['predictions'][4].cpu().numpy()
 }
-np.save(os.path.join(output_dir, 'best_individual_model_predictions.npy'), best_predictions)
+# np.save(os.path.join(output_dir, 'best_individual_model_predictions.npy'), best_predictions)
 
 # Save hyperparameter results
 results_df.to_csv(os.path.join(output_dir, 'generateIndividuals_results.csv'), index=False)
@@ -502,8 +502,8 @@ best_config = {
     'loss': best_model_info['loss'],
     'accuracy': best_model_info['accuracy']
 }
-with open(os.path.join(output_dir, 'best_individual_model_config.json'), 'w') as f:
-    json.dump(best_config, f, indent=4)
+# with open(os.path.join(output_dir, 'best_individual_model_config.json'), 'w') as f:
+#     json.dump(best_config, f, indent=4)
 
 # Extract the best model's predictions for visualization
 sex_pred, age_pred, ethnicity_pred, religion_pred, marital_pred = best_model_info['predictions']
