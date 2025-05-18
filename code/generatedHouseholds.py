@@ -233,10 +233,10 @@ targets.append(
 )
 
 # Hyperparameter Tuning
-learning_rates = [0.001, 0.0005, 0.0001]
-hidden_channel_options = [64, 128, 256]
-# learning_rates = [0.001]
-# hidden_channel_options = [64, 128]
+# learning_rates = [0.001, 0.0005, 0.0001]
+# hidden_channel_options = [64, 128, 256]
+learning_rates = [0.001]
+hidden_channel_options = [64]
 mlp_hidden_dim = 256
 num_epochs = 2000
 # num_epochs = 10
@@ -641,7 +641,8 @@ def plotly_attribute_distributions(attribute_dicts, categories_dict, use_log=Fal
             y=actual_counts,
             name='Actual' if idx == 0 else None,
             marker_color='red',
-            opacity=0.7
+            opacity=0.7,
+            showlegend=idx == 0  # Only show legend for first subplot
         )
         
         predicted_trace = go.Bar(
@@ -649,14 +650,16 @@ def plotly_attribute_distributions(attribute_dicts, categories_dict, use_log=Fal
             y=predicted_counts,
             name='Predicted' if idx == 0 else None,
             marker_color='blue',
-            opacity=0.7
+            opacity=0.7,
+            showlegend=idx == 0  # Only show legend for first subplot
         )
         
         fig.add_trace(actual_trace, row=row, col=col)
         fig.add_trace(predicted_trace, row=row, col=col)
         
         # Update subplot title to include R²
-        fig.layout.annotations[idx].text = f"{attr_name} (R²={r2:.2f})"
+        # fig.layout.annotations[idx].text = f"{attr_name} (R²={r2:.2f})"
+        fig.layout.annotations[idx].text = f"{attr_name} - Accuracy:{r2:.2f}"
     
     # Update layout
     fig.update_layout(
@@ -758,6 +761,9 @@ def plotly_crosstable_comparison(
                     actual_vals.append(a_val)
                     predicted_vals.append(p_val)
         
+        # Create sequential x-axis labels
+        x_labels = list(range(1, len(actual_vals) + 1))
+        
         # Calculate weighted accuracy metric
         total_actual = np.sum(actual_vals)
         accuracy = 0.0
@@ -769,26 +775,29 @@ def plotly_crosstable_comparison(
         
         # Create bar traces
         actual_trace = go.Bar(
-            x=all_keys,
+            x=x_labels,
             y=actual_vals,
             name='Actual' if idx == 0 else None,
             marker_color='red',
-            opacity=0.7
+            opacity=0.7,
+            showlegend=idx == 0  # Only show legend for first subplot
         )
         
         predicted_trace = go.Bar(
-            x=all_keys,
+            x=x_labels,
             y=predicted_vals,
             name='Predicted' if idx == 0 else None,
             marker_color='blue',
-            opacity=0.7
+            opacity=0.7,
+            showlegend=idx == 0  # Only show legend for first subplot
         )
         
         fig.add_trace(actual_trace, row=row, col=col)
         fig.add_trace(predicted_trace, row=row, col=col)
         
         # Update subplot title to include accuracy
-        fig.layout.annotations[idx].text = f"{titles[idx]} - Accuracy: {accuracy:.2f}%"
+        # fig.layout.annotations[idx].text = f"{titles[idx]} - Accuracy: {accuracy:.2f}%"
+        fig.layout.annotations[idx].text = f"{titles[idx]} - Accuracy:{accuracy:.2f}%"
     
     # Update layout
     fig.update_layout(
@@ -811,7 +820,10 @@ def plotly_crosstable_comparison(
         tickwidth=2,
         showline=True,
         linecolor='black',
-        linewidth=2
+        linewidth=2,
+        tickmode='linear',
+        tick0=1,
+        dtick=1
     )
     
     fig.update_yaxes(
