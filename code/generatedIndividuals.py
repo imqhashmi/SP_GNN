@@ -284,10 +284,10 @@ def custom_loss_function(first_out, second_out, third_out, y_first, y_second, y_
     return total_loss
 
 # Define the hyperparameters to tune
-# learning_rates = [0.001, 0.0005, 0.0001]
-learning_rates = [0.001]
-hidden_channel_options = [64]
-# hidden_channel_options = [64, 128, 256]
+# learning_rates = [0.001]
+# hidden_channel_options = [64]
+learning_rates = [0.001, 0.0005, 0.0001]
+hidden_channel_options = [64, 128, 256]
 mlp_hidden_dim = 128
 num_epochs = 2500
 # num_epochs = 10

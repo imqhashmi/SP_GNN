@@ -233,10 +233,10 @@ targets.append(
 )
 
 # Hyperparameter Tuning
-# learning_rates = [0.001, 0.0005, 0.0001]
-# hidden_channel_options = [64, 128, 256]
-learning_rates = [0.001]
-hidden_channel_options = [64]
+learning_rates = [0.001, 0.0005, 0.0001]
+hidden_channel_options = [64, 128, 256]
+# learning_rates = [0.001]
+# hidden_channel_options = [64]
 mlp_hidden_dim = 256
 num_epochs = 2000
 # num_epochs = 10
