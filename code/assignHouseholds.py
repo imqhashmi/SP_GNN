@@ -21,7 +21,7 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 persons_file_path = os.path.join(current_dir, "./outputs/person_nodes.pt")
 households_file_path = os.path.join(current_dir, "./outputs/household_nodes.pt")
 # hh_size_df = pd.read_csv(os.path.join(current_dir, '../../data/preprocessed-data/individual/HH_size.csv'))
-hh_size_df = pd.read_csv(os.path.join(current_dir, '../../data/preprocessed-data/New-Tables/individual/HH_size.csv'))
+hh_size_df = pd.read_csv(os.path.join(current_dir, '../data/preprocessed-data/individuals/HH_size.csv'))
 
 # Define the Oxford areas
 oxford_areas = ['E02005924']
@@ -36,8 +36,8 @@ person_nodes = person_nodes.to(device)
 household_nodes = household_nodes.to(device)
 
 # Define the household composition categories and mapping
-# hh_compositions = ['1PE','1PA','1FE','1FM-0C','1FM-2C', '1FM-nA','1FC-0C','1FC-2C','1FC-nA','1FL-nA','1FL-2C','1H-nS','1H-nE','1H-nA', '1H-2C']
-hh_compositions = ['1PE','1PA','1FE','1FM-0C','1FM-nC', '1FM-nA','1FC-0C','1FC-nC','1FC-nA','1FL-nA','1FL-nC','1H-nS','1H-nE','1H-nA', '1H-nC']
+hh_compositions = ['1PE','1PA','1FE','1FM-0C','1FM-2C', '1FM-nA','1FC-0C','1FC-2C','1FC-nA','1FL-nA','1FL-2C','1H-nS','1H-nE','1H-nA', '1H-2C']
+# hh_compositions = ['1PE','1PA','1FE','1FM-0C','1FM-nC', '1FM-nA','1FC-0C','1FC-nC','1FC-nA','1FL-nA','1FL-nC','1H-nS','1H-nE','1H-nA', '1H-nC']
 hh_map = {category: i for i, category in enumerate(hh_compositions)}
 reverse_hh_map = {v: k for k, v in hh_map.items()}  # Reverse mapping to decode
 
@@ -55,12 +55,12 @@ household_size_dist_na = {k: v for k, v in zip(hh_size_df.columns[2:], hh_size_d
 values_size_na, weights_size_na = zip(*household_size_dist_na.items())
 
 # Define the size assignment function based on household composition
-# fixed_hh = {"1PE": 1, "1PA": 1, "1FM-0C": 2, "1FC-0C": 2}
-# three_or_more_hh = {'1FM-2C', '1FM-nA', '1FC-2C', '1FC-nA'}
-# two_or_more_hh = {'1FL-2C', '1FL-nA', '1H-2C'}
 fixed_hh = {"1PE": 1, "1PA": 1, "1FM-0C": 2, "1FC-0C": 2}
-three_or_more_hh = {'1FM-nC', '1FM-nA', '1FC-nC', '1FC-nA'}
-two_or_more_hh = {'1FL-nC', '1FL-nA', '1H-nC'}
+three_or_more_hh = {'1FM-2C', '1FM-nA', '1FC-2C', '1FC-nA'}
+two_or_more_hh = {'1FL-2C', '1FL-nA', '1H-2C'}
+# fixed_hh = {"1PE": 1, "1PA": 1, "1FM-0C": 2, "1FC-0C": 2}
+# three_or_more_hh = {'1FM-nC', '1FM-nA', '1FC-nC', '1FC-nA'}
+# two_or_more_hh = {'1FL-nC', '1FL-nA', '1H-nC'}
 
 def fit_household_size(composition):
     if composition in fixed_hh:
