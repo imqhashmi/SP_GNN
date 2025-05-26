@@ -476,49 +476,54 @@ for hh_comp in hh_compositions:
 # Fix ethnicity and religion extraction based on column structure in the datasets
 ethnicity_actual = {}
 for eth in ethnicity_categories:
-    # Look for column that ends with the ethnicity code
-    for col in ethnicity_df.columns:
-        if col.endswith(eth) and 'count' in ethnicity_df.columns:
-            ethnicity_actual[eth] = ethnicity_df[ethnicity_df[col] == 1]['count'].sum()
-            break
-    if eth not in ethnicity_actual:
-        # Fallback if column structure is different
-        ethnicity_actual[eth] = 0
+    ethnicity_actual[eth] = ethnicity_df[eth].iloc[0]
 
 religion_actual = {}
 for rel in religion_categories:
-    # Look for column that ends with the religion code
-    for col in religion_df.columns:
-        if col.endswith(rel) and 'count' in religion_df.columns:
-            religion_actual[rel] = religion_df[religion_df[col] == 1]['count'].sum()
-            break
-    if rel not in religion_actual:
-        # Fallback if column structure is different
-        religion_actual[rel] = 0
+    religion_actual[rel] = religion_df[rel].iloc[0]
 
-# If counts are still zero, try simpler method by summing total distribution to match household count
-if sum(ethnicity_actual.values()) == 0:
-    # Extract count distribution from cross table by summing columns for each ethnicity
-    for eth in ethnicity_categories:
-        total_eth = 0
-        for col in hhcomp_by_ethnicity_df.columns:
-            if f' {eth}' in col:
-                total_eth += hhcomp_by_ethnicity_df[col].iloc[0]
-        ethnicity_actual[eth] = total_eth
+# ethnicity_actual = {}
+# for eth in ethnicity_categories:
+#     # Look for column that ends with the ethnicity code
+#     for col in ethnicity_df.columns:
+#         if col.endswith(eth) and 'count' in ethnicity_df.columns:
+#             ethnicity_actual[eth] = ethnicity_df[ethnicity_df[col] == 1]['count'].sum()
+#             break
+#     if eth not in ethnicity_actual:
+#         # Fallback if column structure is different
+#         ethnicity_actual[eth] = 0
 
-if sum(religion_actual.values()) == 0:
-    # Extract count distribution from cross table by summing columns for each religion
-    for rel in religion_categories:
-        total_rel = 0
-        for col in hhcomp_by_religion_df.columns:
-            if f' {rel}' in col:
-                total_rel += hhcomp_by_religion_df[col].iloc[0]
-        religion_actual[rel] = total_rel
+# religion_actual = {}
+# for rel in religion_categories:
+#     # Look for column that ends with the religion code
+#     for col in religion_df.columns:
+#         if col.endswith(rel) and 'count' in religion_df.columns:
+#             religion_actual[rel] = religion_df[religion_df[col] == 1]['count'].sum()
+#             break
+#     if rel not in religion_actual:
+#         # Fallback if column structure is different
+#         religion_actual[rel] = 0
+
+# print("============ Actual Values =============")
+# print("\nHH Composition:")
+# print(hh_comp_actual)
+# print("\nEthnicity:")
+# print(ethnicity_actual)
+# print("\nReligion:")
+# print(religion_actual)
 
 # Calculate counts of predicted categories
 hh_comp_pred = dict(Counter(hh_comp_pred_names))
 ethnicity_pred = dict(Counter(ethnicity_pred_names))
 religion_pred = dict(Counter(religion_pred_names))
+
+# print("============ Predicted Values =============")
+# print("\nHH Composition:")
+# print(hh_comp_pred)
+# print("\nEthnicity:")
+# print(ethnicity_pred)
+# print("\nReligion:")
+# print(religion_pred)
 
 # Normalize the actual distributions to match the total number of households in predictions
 # This ensures fair comparison of relative proportions
@@ -548,6 +553,12 @@ for hh in hh_compositions:
         if col_name in hhcomp_by_religion_df.columns:
             hh_by_religion_actual_reshaped.loc[hh, rel] = hhcomp_by_religion_df[col_name].iloc[0]
 
+# print("============ Actual Crosstables =============")
+# print("\nHH by Ethnicity:")
+# print(hh_by_ethnicity_actual_reshaped)
+# print("\nHH by Religion:")
+# print(hh_by_religion_actual_reshaped)
+
 # Create predicted crosstables from our predictions
 hh_by_ethnicity_pred = pd.DataFrame(0, index=hh_compositions, columns=ethnicity_categories)
 hh_by_religion_pred = pd.DataFrame(0, index=hh_compositions, columns=religion_categories)
@@ -560,6 +571,12 @@ for i in range(len(hh_comp_pred_names)):
     
     hh_by_ethnicity_pred.loc[hh, eth] += 1
     hh_by_religion_pred.loc[hh, rel] += 1
+
+# print("============ Predicted Crosstables =============")
+# print("\nHH by Ethnicity:")
+# print(hh_by_ethnicity_pred)
+# print("\nHH by Religion:")
+# print(hh_by_religion_pred)
 
 # Function to calculate R-squared accuracy
 def calculate_r2_accuracy(generated_counts, target_counts):
@@ -720,7 +737,7 @@ def plotly_crosstable_comparison(
     num_plots = len(keys_list)
     num_rows = (num_plots + num_cols - 1) // num_cols
     
-    vertical_spacing = 0.6 if show_keys else 0.4
+    vertical_spacing = 0.4 if show_keys else 0.2
     subplot_height = 400 if show_keys else 300
     
     if num_rows > 1:
@@ -841,6 +858,159 @@ def plotly_crosstable_comparison(
     # Display the plot
     fig.show()
 
+# Plotly version of radar crosstable comparison
+def plotly_radar_crosstable_comparison(actual_dfs, predicted_dfs, titles):
+    """
+    Creates radar chart subplots comparing actual vs. predicted distributions for crosstables.
+    Uses numeric indices instead of category labels and shows aggregated actual vs predicted lines.
+    
+    Parameters:
+    actual_dfs - Dictionary of crosstable names to actual dataframes
+    predicted_dfs - Dictionary of crosstable names to predicted dataframes
+    titles - List of subplot titles
+    """
+    keys_list = list(actual_dfs.keys())
+    num_plots = len(keys_list)
+    
+    # Set to one column, one plot per row
+    num_cols = 1
+    num_rows = num_plots
+    
+    # Create subplots
+    fig = make_subplots(
+        rows=num_rows,
+        cols=num_cols,
+        subplot_titles=titles,
+        specs=[[{'type': 'polar'}] for _ in range(num_rows)],
+        vertical_spacing=0.1  # Increased vertical spacing between subplots
+    )
+    
+    for idx, crosstable_key in enumerate(keys_list):
+        row = idx + 1
+        col = 1
+        
+        actual_df = actual_dfs[crosstable_key]
+        predicted_df = predicted_dfs[crosstable_key]
+        
+        # Flatten the dataframes to create 1D arrays
+        actual_vals = actual_df.values.flatten()
+        predicted_vals = predicted_df.values.flatten()
+        
+        # Create numeric indices for the categories
+        num_points = len(actual_vals)
+        
+        # Determine step size for labels based on number of points
+        if num_points > 40:
+            step_size = 4
+        elif num_points > 30:
+            step_size = 3
+        elif num_points > 20:
+            step_size = 2
+        else:
+            step_size = 1
+            
+        # Create labels with appropriate step size
+        theta = []
+        for i in range(num_points):
+            if i % step_size == 0:
+                theta.append(f"{i+1}")
+            else:
+                theta.append("")
+        
+        # Add the first value again to close the polygon
+        actual_vals = np.append(actual_vals, actual_vals[0])
+        predicted_vals = np.append(predicted_vals, predicted_vals[0])
+        theta = theta + [theta[0]]
+        
+        # Calculate accuracy
+        total_actual = np.sum(actual_vals[:-1])
+        accuracy = 0.0
+        if total_actual > 0:
+            for a_val, p_val in zip(actual_vals[:-1], predicted_vals[:-1]):
+                if a_val > 0:
+                    accuracy += max(0, 1 - abs(p_val - a_val) / a_val) * (a_val / total_actual)
+        accuracy *= 100.0
+        
+        # Create traces
+        actual_trace = go.Scatterpolar(
+            r=actual_vals,
+            theta=theta,
+            name='Actual' if idx == 0 else None,
+            line=dict(color='red', width=2),
+            showlegend=idx == 0
+        )
+        
+        predicted_trace = go.Scatterpolar(
+            r=predicted_vals,
+            theta=theta,
+            name=f'Predicted (Acc: {accuracy:.1f}%)' if idx == 0 else None,
+            line=dict(color='blue', width=2),
+            showlegend=idx == 0
+        )
+        
+        fig.add_trace(actual_trace, row=row, col=col)
+        fig.add_trace(predicted_trace, row=row, col=col)
+        
+        # Update subplot title to include accuracy
+        fig.layout.annotations[idx].text = f"{titles[idx]} - Accuracy:{accuracy:.2f}%"
+        fig.layout.annotations[idx].font.size = 14  # Reduced title font size
+        fig.layout.annotations[idx].y = fig.layout.annotations[idx].y + 0.02  # Move title up slightly
+    
+    # Update layout with larger dimensions
+    fig.update_layout(
+        height=450 * num_rows,  # Slightly increased height to accommodate title spacing
+        width=1000,
+        title_text="Radar Chart Comparison: Actual vs. Predicted",
+        title_font_size=18,  # Main title size
+        showlegend=True,
+        legend=dict(
+            yanchor="top",
+            y=0.99,
+            xanchor="right",
+            x=0.99,
+            font=dict(size=12)
+        ),
+        polar=dict(
+            radialaxis=dict(
+                visible=True,
+                range=[0, max(
+                    actual_df.values.max(),
+                    predicted_df.values.max()
+                )]
+            )
+        ),
+        margin=dict(t=120, b=80, l=100, r=100)  # Increased top margin for titles
+    )
+    
+    # Update polar axes for each subplot
+    for i in range(1, num_rows + 1):
+        fig.update_polars(
+            dict(
+                radialaxis=dict(
+                    visible=True,
+                    showline=True,
+                    showticklabels=True,
+                    gridcolor="lightgrey",
+                    gridwidth=0.5,
+                    tickfont=dict(size=8),  # Reduced radial axis font size
+                ),
+                angularaxis=dict(
+                    showline=True,
+                    showticklabels=True,
+                    gridcolor="lightgrey",
+                    gridwidth=0.5,
+                    tickfont=dict(size=8),  # Reduced angular axis font size
+                    rotation=90,
+                    direction="clockwise"
+                )
+            ),
+            row=i,
+            col=1
+        )
+    
+    # Display the plot
+    fig.show()
+
 # Create Plotly individual attribute plots
 attribute_dicts = {
     'Household Composition': (hh_comp_actual, hh_comp_pred),
@@ -873,3 +1043,6 @@ titles = [
 ]
 
 plotly_crosstable_comparison(actual_dfs, predicted_dfs, titles, show_keys=False, filter_zero_bars=True)
+
+# Create Plotly radar crosstable plots
+plotly_radar_crosstable_comparison(actual_dfs, predicted_dfs, titles)

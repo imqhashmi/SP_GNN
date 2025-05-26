@@ -523,6 +523,236 @@ person_tensor_path = os.path.join(output_dir, 'person_nodes.pt')
 torch.save(person_tensor.cpu(), person_tensor_path)
 print(f"\nBest model outputs saved to {output_dir}")
 
+sex_pred_indices = sex_pred.cpu().numpy()
+age_pred_indices = age_pred.cpu().numpy()
+ethnicity_pred_indices = ethnicity_pred.cpu().numpy()
+religion_pred_indices = religion_pred.cpu().numpy()
+marital_pred_indices = marital_pred.cpu().numpy()
+
+# Convert model predictions to category names
+sex_pred_names = [sex_categories[i] for i in sex_pred_indices]
+age_pred_names = [age_groups[i] for i in age_pred_indices]
+ethnicity_pred_names = [ethnicity_categories[i] for i in ethnicity_pred_indices]
+religion_pred_names = [religion_categories[i] for i in religion_pred_indices]
+marital_pred_names = [marital_categories[i] for i in marital_pred_indices]
+
+# Calculate actual distributions
+sex_actual = {}
+age_actual = {}
+ethnicity_actual = {}
+religion_actual = {}
+marital_actual = {}
+
+# Extract counts from the original data frames
+for sex in sex_categories:
+    sex_actual[sex] = sex_df[sex].iloc[0]
+    # col_name = f'count-{sex}'
+    # if col_name in sex_df.columns:
+    #     sex_actual[sex] = sex_df[col_name].iloc[0]
+    # else:
+    #     # Fallback to searching through columns
+    #     for col in sex_df.columns:
+    #         if col.endswith(sex) and col != 'geography code' and col != 'total':
+    #             sex_actual[sex] = sex_df[col].iloc[0]
+    #             break
+    #     if sex not in sex_actual:
+    #         sex_actual[sex] = 0
+
+for age in age_groups:
+    age_actual[age] = age_df[age].iloc[0]
+    # col_name = f'count-{age}'
+    # if col_name in age_df.columns:
+    #     age_actual[age] = age_df[col_name].iloc[0]
+    # else:
+    #     # Fallback to searching through columns
+    #     for col in age_df.columns:
+    #         if col.endswith(age) and col != 'geography code' and col != 'total':
+    #             age_actual[age] = age_df[col].iloc[0]
+    #             break
+    #     if age not in age_actual:
+    #         age_actual[age] = 0
+
+for eth in ethnicity_categories:
+    ethnicity_actual[eth] = ethnicity_df[eth].iloc[0]
+    # col_name = f'count-{eth}'
+    # if col_name in ethnicity_df.columns:
+    #     ethnicity_actual[eth] = ethnicity_df[col_name].iloc[0]
+    # else:
+    #     # Fallback to searching through columns
+    #     for col in ethnicity_df.columns:
+    #         if col.endswith(eth) and col != 'geography code' and col != 'total':
+    #             ethnicity_actual[eth] = ethnicity_df[col].iloc[0]
+    #             break
+    #     if eth not in ethnicity_actual:
+    #         ethnicity_actual[eth] = 0
+
+for rel in religion_categories:
+    religion_actual[rel] = religion_df[rel].iloc[0]
+    # col_name = f'count-{rel}'
+    # if col_name in religion_df.columns:
+    #     religion_actual[rel] = religion_df[col_name].iloc[0]
+    # else:
+    #     # Fallback to searching through columns
+    #     for col in religion_df.columns:
+    #         if col.endswith(rel) and col != 'geography code' and col != 'total':
+    #             religion_actual[rel] = religion_df[col].iloc[0]
+    #             break
+    #     if rel not in religion_actual:
+    #         religion_actual[rel] = 0
+
+for mar in marital_categories:
+    marital_actual[mar] = marital_df[mar].iloc[0]
+    # col_name = f'count-{mar}'
+    # if col_name in marital_df.columns:
+    #     marital_actual[mar] = marital_df[col_name].iloc[0]
+    # else:
+    #     # Fallback to searching through columns
+    #     for col in marital_df.columns:
+    #         if col.endswith(mar) and col != 'geography code' and col != 'total':
+    #             marital_actual[mar] = marital_df[col].iloc[0]
+    #             break
+    #     if mar not in marital_actual:
+    #         marital_actual[mar] = 0
+
+# If counts are still zero, try extracting from cross-tables
+# if sum(ethnicity_actual.values()) == 0:
+#     for eth in ethnicity_categories:
+#         total_eth = 0
+#         for col in ethnic_by_sex_by_age_df.columns:
+#             if f' {eth}' in col:
+#                 total_eth += ethnic_by_sex_by_age_df[col].iloc[0]
+#         ethnicity_actual[eth] = total_eth
+
+# if sum(religion_actual.values()) == 0:
+#     for rel in religion_categories:
+#         total_rel = 0
+#         for col in religion_by_sex_by_age_df.columns:
+#             if f' {rel}' in col:
+#                 total_rel += religion_by_sex_by_age_df[col].iloc[0]
+#         religion_actual[rel] = total_rel
+
+# if sum(marital_actual.values()) == 0:
+#     for mar in marital_categories:
+#         total_mar = 0
+#         for col in marital_by_sex_by_age_df.columns:
+#             if f' {mar}' in col:
+#                 total_mar += marital_by_sex_by_age_df[col].iloc[0]
+#         marital_actual[mar] = total_mar
+
+# print("============ Actual Values =============")
+# print("\nSex:")
+# print(sex_actual)
+# print("\nAge:")
+# print(age_actual)
+# print("\nEthnicity:")
+# print(ethnicity_actual)
+# print("\nReligion:")
+# print(religion_actual)
+# print("\nMarital:")
+# print(marital_actual)
+
+# Calculate predicted distributions
+sex_pred_counts = dict(Counter(sex_pred_names))
+age_pred_counts = dict(Counter(age_pred_names))
+ethnicity_pred_counts = dict(Counter(ethnicity_pred_names))
+religion_pred_counts = dict(Counter(religion_pred_names))
+marital_pred_counts = dict(Counter(marital_pred_names))
+
+# print("============ Predicted Values =============")
+# print("\nSex:")
+# print(sex_pred_counts)
+# print("\nAge:")
+# print(age_pred_counts)
+# print("\nEthnicity:")
+# print(ethnicity_pred_counts)
+# print("\nReligion:")
+# print(religion_pred_counts)
+# print("\nMarital:")
+# print(marital_pred_counts)
+
+# Normalize the actual distributions to match the total number of persons in predictions
+# This ensures fair comparison of relative proportions
+total_actual_sex = sum(sex_actual.values())
+total_actual_age = sum(age_actual.values())
+total_actual_ethnicity = sum(ethnicity_actual.values())
+total_actual_religion = sum(religion_actual.values())
+total_actual_marital = sum(marital_actual.values())
+total_pred = num_persons
+
+if total_actual_sex > 0:
+    sex_actual = {k: v * total_pred / total_actual_sex for k, v in sex_actual.items()}
+if total_actual_age > 0:
+    age_actual = {k: v * total_pred / total_actual_age for k, v in age_actual.items()}
+if total_actual_ethnicity > 0:
+    ethnicity_actual = {k: v * total_pred / total_actual_ethnicity for k, v in ethnicity_actual.items()}
+if total_actual_religion > 0:
+    religion_actual = {k: v * total_pred / total_actual_religion for k, v in religion_actual.items()}
+if total_actual_marital > 0:
+    marital_actual = {k: v * total_pred / total_actual_marital for k, v in marital_actual.items()}
+
+# Create combined age-sex column names
+age_sex_combinations = [f"{age} {sex}" for age in age_groups for sex in sex_categories]
+
+# Create actual crosstables with ethnicity/religion/marital as indices and age-sex combinations as columns
+ethnic_sex_age_actual = pd.DataFrame(0, index=ethnicity_categories, columns=age_sex_combinations)
+religion_sex_age_actual = pd.DataFrame(0, index=religion_categories, columns=age_sex_combinations)
+marital_sex_age_actual = pd.DataFrame(0, index=marital_categories, columns=age_sex_combinations)
+
+# Extract the actual counts from the crosstable dataframes
+for sex in sex_categories:
+    for age in age_groups:
+        col_name = f"{age} {sex}"
+        # Sum up counts for each ethnicity for this sex-age combination
+        for eth in ethnicity_categories:
+            original_col = f'{sex} {age} {eth}'
+            if original_col in ethnic_by_sex_by_age_df.columns:
+                ethnic_sex_age_actual.loc[eth, col_name] = ethnic_by_sex_by_age_df[original_col].iloc[0]
+        
+        # Sum up counts for each religion for this sex-age combination
+        for rel in religion_categories:
+            original_col = f'{sex} {age} {rel}'
+            if original_col in religion_by_sex_by_age_df.columns:
+                religion_sex_age_actual.loc[rel, col_name] = religion_by_sex_by_age_df[original_col].iloc[0]
+        
+        # Sum up counts for each marital status for this sex-age combination
+        for mar in marital_categories:
+            original_col = f'{sex} {age} {mar}'
+            if original_col in marital_by_sex_by_age_df.columns:
+                marital_sex_age_actual.loc[mar, col_name] = marital_by_sex_by_age_df[original_col].iloc[0]
+
+# print("============ Actual Crosstables =============")
+# print("\nEthnicity:")
+# print(ethnic_sex_age_actual)
+# print("\nReligion:")
+# print(religion_sex_age_actual)
+# print("\nMarital:")
+# print(marital_sex_age_actual)
+
+# Create predicted crosstables with the same structure
+ethnic_sex_age_pred = pd.DataFrame(0, index=ethnicity_categories, columns=age_sex_combinations)
+religion_sex_age_pred = pd.DataFrame(0, index=religion_categories, columns=age_sex_combinations)
+marital_sex_age_pred = pd.DataFrame(0, index=marital_categories, columns=age_sex_combinations)
+
+# Fill the predicted crosstables based on our model predictions
+for i in range(len(sex_pred_names)):
+    sex = sex_pred_names[i]
+    age = age_pred_names[i]
+    eth = ethnicity_pred_names[i]
+    rel = religion_pred_names[i]
+    mar = marital_pred_names[i]
+    
+    col_name = f"{age} {sex}"
+    ethnic_sex_age_pred.loc[eth, col_name] += 1
+    religion_sex_age_pred.loc[rel, col_name] += 1
+    marital_sex_age_pred.loc[mar, col_name] += 1
+
+# print("============ Predicted Crosstables =============")
+# print("\nEthnicity:")
+# print(ethnic_sex_age_pred)
+# print("\nReligion:")
+# print(religion_sex_age_pred)
+# print("\nMarital:")
+# print(marital_sex_age_pred)
 
 # Function to calculate R-squared accuracy
 def calculate_r2_accuracy(generated_counts, target_counts):
@@ -683,7 +913,7 @@ def plotly_crosstable_comparison(
     num_plots = len(keys_list)
     num_rows = (num_plots + num_cols - 1) // num_cols
     
-    vertical_spacing = 0.6 if show_keys else 0.4
+    vertical_spacing = 0.4 if show_keys else 0.2
     subplot_height = 400 if show_keys else 300
     
     if num_rows > 1:
@@ -708,7 +938,6 @@ def plotly_crosstable_comparison(
         predicted_df = predicted_dfs[crosstable_key]
         
         # Flatten the dataframes to create 1D arrays for bar charts
-        # We'll create key strings from the row and column indices
         actual_vals = []
         predicted_vals = []
         all_keys = []
@@ -726,6 +955,21 @@ def plotly_crosstable_comparison(
         
         # Create sequential x-axis labels
         x_labels = list(range(1, len(actual_vals) + 1))
+        
+        # Calculate label step size based on number of bars
+        # Show fewer labels if there are many bars
+        num_bars = len(x_labels)
+        if num_bars > 40:
+            step_size = 4
+        elif num_bars > 30:
+            step_size = 3
+        elif num_bars > 20:
+            step_size = 2
+        else:
+            step_size = 1
+            
+        # Create visible labels array with appropriate step size
+        visible_labels = [i if i % step_size == 0 else "" for i in x_labels]
         
         # Calculate weighted accuracy metric
         total_actual = np.sum(actual_vals)
@@ -759,8 +1003,16 @@ def plotly_crosstable_comparison(
         fig.add_trace(predicted_trace, row=row, col=col)
         
         # Update subplot title to include accuracy
-        # fig.layout.annotations[idx].text = f"{titles[idx]} - Accuracy: {accuracy:.2f}%"
         fig.layout.annotations[idx].text = f"{titles[idx]} - Accuracy:{accuracy:.2f}%"
+        
+        # Update x-axis for this subplot with custom labels
+        fig.update_xaxes(
+            ticktext=visible_labels,
+            tickvals=x_labels,
+            tickangle=90,  # Angle the labels for better readability
+            row=row,
+            col=col
+        )
     
     # Update layout
     fig.update_layout(
@@ -783,10 +1035,7 @@ def plotly_crosstable_comparison(
         tickwidth=2,
         showline=True,
         linecolor='black',
-        linewidth=2,
-        tickmode='linear',
-        tick0=1,
-        dtick=1
+        linewidth=2
     )
     
     fig.update_yaxes(
@@ -798,145 +1047,10 @@ def plotly_crosstable_comparison(
         linewidth=2
     )
     
-    # Save the plot as HTML
-    # fig.write_html(os.path.join(output_dir, "crosstable_comparisons.html"))
-    
     # Display the plot
     fig.show()
 
 # Prepare data for visualization
-# Convert model predictions to category names
-sex_pred_names = [sex_categories[i] for i in sex_pred.cpu().numpy()]
-age_pred_names = [age_groups[i] for i in age_pred.cpu().numpy()]
-ethnicity_pred_names = [ethnicity_categories[i] for i in ethnicity_pred.cpu().numpy()]
-religion_pred_names = [religion_categories[i] for i in religion_pred.cpu().numpy()]
-marital_pred_names = [marital_categories[i] for i in marital_pred.cpu().numpy()]
-
-# Calculate actual distributions
-sex_actual = {}
-age_actual = {}
-ethnicity_actual = {}
-religion_actual = {}
-marital_actual = {}
-
-# Extract counts from the original data frames
-for sex in sex_categories:
-    col_name = f'count-{sex}'
-    if col_name in sex_df.columns:
-        sex_actual[sex] = sex_df[col_name].iloc[0]
-    else:
-        # Fallback to searching through columns
-        for col in sex_df.columns:
-            if col.endswith(sex) and col != 'geography code' and col != 'total':
-                sex_actual[sex] = sex_df[col].iloc[0]
-                break
-        if sex not in sex_actual:
-            sex_actual[sex] = 0
-
-for age in age_groups:
-    col_name = f'count-{age}'
-    if col_name in age_df.columns:
-        age_actual[age] = age_df[col_name].iloc[0]
-    else:
-        # Fallback to searching through columns
-        for col in age_df.columns:
-            if col.endswith(age) and col != 'geography code' and col != 'total':
-                age_actual[age] = age_df[col].iloc[0]
-                break
-        if age not in age_actual:
-            age_actual[age] = 0
-
-for eth in ethnicity_categories:
-    col_name = f'count-{eth}'
-    if col_name in ethnicity_df.columns:
-        ethnicity_actual[eth] = ethnicity_df[col_name].iloc[0]
-    else:
-        # Fallback to searching through columns
-        for col in ethnicity_df.columns:
-            if col.endswith(eth) and col != 'geography code' and col != 'total':
-                ethnicity_actual[eth] = ethnicity_df[col].iloc[0]
-                break
-        if eth not in ethnicity_actual:
-            ethnicity_actual[eth] = 0
-
-for rel in religion_categories:
-    col_name = f'count-{rel}'
-    if col_name in religion_df.columns:
-        religion_actual[rel] = religion_df[col_name].iloc[0]
-    else:
-        # Fallback to searching through columns
-        for col in religion_df.columns:
-            if col.endswith(rel) and col != 'geography code' and col != 'total':
-                religion_actual[rel] = religion_df[col].iloc[0]
-                break
-        if rel not in religion_actual:
-            religion_actual[rel] = 0
-
-for mar in marital_categories:
-    col_name = f'count-{mar}'
-    if col_name in marital_df.columns:
-        marital_actual[mar] = marital_df[col_name].iloc[0]
-    else:
-        # Fallback to searching through columns
-        for col in marital_df.columns:
-            if col.endswith(mar) and col != 'geography code' and col != 'total':
-                marital_actual[mar] = marital_df[col].iloc[0]
-                break
-        if mar not in marital_actual:
-            marital_actual[mar] = 0
-
-# If counts are still zero, try extracting from cross-tables
-if sum(ethnicity_actual.values()) == 0:
-    for eth in ethnicity_categories:
-        total_eth = 0
-        for col in ethnic_by_sex_by_age_df.columns:
-            if f' {eth}' in col:
-                total_eth += ethnic_by_sex_by_age_df[col].iloc[0]
-        ethnicity_actual[eth] = total_eth
-
-if sum(religion_actual.values()) == 0:
-    for rel in religion_categories:
-        total_rel = 0
-        for col in religion_by_sex_by_age_df.columns:
-            if f' {rel}' in col:
-                total_rel += religion_by_sex_by_age_df[col].iloc[0]
-        religion_actual[rel] = total_rel
-
-if sum(marital_actual.values()) == 0:
-    for mar in marital_categories:
-        total_mar = 0
-        for col in marital_by_sex_by_age_df.columns:
-            if f' {mar}' in col:
-                total_mar += marital_by_sex_by_age_df[col].iloc[0]
-        marital_actual[mar] = total_mar
-
-# Calculate predicted distributions
-sex_pred_counts = dict(Counter(sex_pred_names))
-age_pred_counts = dict(Counter(age_pred_names))
-ethnicity_pred_counts = dict(Counter(ethnicity_pred_names))
-religion_pred_counts = dict(Counter(religion_pred_names))
-marital_pred_counts = dict(Counter(marital_pred_names))
-
-# Normalize the actual distributions to match the total number of persons in predictions
-# This ensures fair comparison of relative proportions
-total_actual_sex = sum(sex_actual.values())
-total_actual_age = sum(age_actual.values())
-total_actual_ethnicity = sum(ethnicity_actual.values())
-total_actual_religion = sum(religion_actual.values())
-total_actual_marital = sum(marital_actual.values())
-total_pred = num_persons
-
-if total_actual_sex > 0:
-    sex_actual = {k: v * total_pred / total_actual_sex for k, v in sex_actual.items()}
-if total_actual_age > 0:
-    age_actual = {k: v * total_pred / total_actual_age for k, v in age_actual.items()}
-if total_actual_ethnicity > 0:
-    ethnicity_actual = {k: v * total_pred / total_actual_ethnicity for k, v in ethnicity_actual.items()}
-if total_actual_religion > 0:
-    religion_actual = {k: v * total_pred / total_actual_religion for k, v in religion_actual.items()}
-if total_actual_marital > 0:
-    marital_actual = {k: v * total_pred / total_actual_marital for k, v in marital_actual.items()}
-
 # Create attribute dictionaries for plotting
 attribute_dicts = {
     'Sex': (sex_actual, sex_pred_counts),
@@ -958,49 +1072,6 @@ categories_dict = {
 plotly_attribute_distributions(attribute_dicts, categories_dict, filter_zero_bars=True)
 
 # Create crosstables for visualization
-# Create actual crosstables from the three-way relationships
-ethnic_sex_age_actual = pd.DataFrame(0, index=sex_categories, columns=age_groups)
-religion_sex_age_actual = pd.DataFrame(0, index=sex_categories, columns=age_groups)
-marital_sex_age_actual = pd.DataFrame(0, index=sex_categories, columns=age_groups)
-
-# Extract the actual counts from the crosstable dataframes
-for sex in sex_categories:
-    for age in age_groups:
-        # Sum up counts for each ethnicity for this sex-age combination
-        for eth in ethnicity_categories:
-            col_name = f'{sex} {age} {eth}'
-            if col_name in ethnic_by_sex_by_age_df.columns:
-                ethnic_sex_age_actual.loc[sex, age] += ethnic_by_sex_by_age_df[col_name].iloc[0]
-        
-        # Sum up counts for each religion for this sex-age combination
-        for rel in religion_categories:
-            col_name = f'{sex} {age} {rel}'
-            if col_name in religion_by_sex_by_age_df.columns:
-                religion_sex_age_actual.loc[sex, age] += religion_by_sex_by_age_df[col_name].iloc[0]
-        
-        # Sum up counts for each marital status for this sex-age combination
-        for mar in marital_categories:
-            col_name = f'{sex} {age} {mar}'
-            if col_name in marital_by_sex_by_age_df.columns:
-                marital_sex_age_actual.loc[sex, age] += marital_by_sex_by_age_df[col_name].iloc[0]
-
-# Create predicted crosstables from our predictions
-ethnic_sex_age_pred = pd.DataFrame(0, index=sex_categories, columns=age_groups)
-religion_sex_age_pred = pd.DataFrame(0, index=sex_categories, columns=age_groups)
-marital_sex_age_pred = pd.DataFrame(0, index=sex_categories, columns=age_groups)
-
-# Fill the predicted crosstables based on our model predictions
-for i in range(len(sex_pred_names)):
-    sex = sex_pred_names[i]
-    age = age_pred_names[i]
-    eth = ethnicity_pred_names[i]
-    rel = religion_pred_names[i]
-    mar = marital_pred_names[i]
-    
-    ethnic_sex_age_pred.loc[sex, age] += 1
-    religion_sex_age_pred.loc[sex, age] += 1
-    marital_sex_age_pred.loc[sex, age] += 1
-
 # Create crosstable dictionaries for plotting
 actual_dfs = {
     'Ethnic_Sex_Age': ethnic_sex_age_actual,
@@ -1008,11 +1079,17 @@ actual_dfs = {
     'Marital_Sex_Age': marital_sex_age_actual
 }
 
+# print("============ Actual Crosstables DF =============")
+# print(actual_dfs)
+
 predicted_dfs = {
     'Ethnic_Sex_Age': ethnic_sex_age_pred,
     'Religion_Sex_Age': religion_sex_age_pred,
     'Marital_Sex_Age': marital_sex_age_pred
 }
+
+# print("============ Predicted Crosstables DF =============")
+# print(predicted_dfs)
 
 titles = [
     'Ethnicity by Sex by Age Distribution',
@@ -1022,3 +1099,159 @@ titles = [
 
 # Plot crosstable comparisons using the same function as in generateHouseholds.py
 plotly_crosstable_comparison(actual_dfs, predicted_dfs, titles, show_keys=False, filter_zero_bars=True)
+
+# Plotly version of radar crosstable comparison
+def plotly_radar_crosstable_comparison(actual_dfs, predicted_dfs, titles):
+    """
+    Creates radar chart subplots comparing actual vs. predicted distributions for crosstables.
+    Uses numeric indices instead of category labels and shows aggregated actual vs predicted lines.
+    
+    Parameters:
+    actual_dfs - Dictionary of crosstable names to actual dataframes
+    predicted_dfs - Dictionary of crosstable names to predicted dataframes
+    titles - List of subplot titles
+    """
+    keys_list = list(actual_dfs.keys())
+    num_plots = len(keys_list)
+    
+    # Set to one column, one plot per row
+    num_cols = 1
+    num_rows = num_plots
+    
+    # Create subplots
+    fig = make_subplots(
+        rows=num_rows,
+        cols=num_cols,
+        subplot_titles=titles,
+        specs=[[{'type': 'polar'}] for _ in range(num_rows)],
+        vertical_spacing=0.1  # Increased vertical spacing between subplots
+    )
+    
+    for idx, crosstable_key in enumerate(keys_list):
+        row = idx + 1
+        col = 1
+        
+        actual_df = actual_dfs[crosstable_key]
+        predicted_df = predicted_dfs[crosstable_key]
+        
+        # Flatten the dataframes to create 1D arrays
+        actual_vals = actual_df.values.flatten()
+        predicted_vals = predicted_df.values.flatten()
+        
+        # Create numeric indices for the categories
+        num_points = len(actual_vals)
+        
+        # Determine step size for labels based on number of points
+        if num_points > 40:
+            step_size = 4
+        elif num_points > 30:
+            step_size = 3
+        elif num_points > 20:
+            step_size = 2
+        else:
+            step_size = 1
+            
+        # Create labels with appropriate step size
+        theta = []
+        for i in range(num_points):
+            if i % step_size == 0:
+                theta.append(f"{i+1}")
+            else:
+                theta.append("")
+        
+        # Add the first value again to close the polygon
+        actual_vals = np.append(actual_vals, actual_vals[0])
+        predicted_vals = np.append(predicted_vals, predicted_vals[0])
+        theta = theta + [theta[0]]
+        
+        # Calculate accuracy
+        total_actual = np.sum(actual_vals[:-1])
+        accuracy = 0.0
+        if total_actual > 0:
+            for a_val, p_val in zip(actual_vals[:-1], predicted_vals[:-1]):
+                if a_val > 0:
+                    accuracy += max(0, 1 - abs(p_val - a_val) / a_val) * (a_val / total_actual)
+        accuracy *= 100.0
+        
+        # Create traces
+        actual_trace = go.Scatterpolar(
+            r=actual_vals,
+            theta=theta,
+            name='Actual' if idx == 0 else None,
+            line=dict(color='red', width=2),
+            showlegend=idx == 0
+        )
+        
+        predicted_trace = go.Scatterpolar(
+            r=predicted_vals,
+            theta=theta,
+            name=f'Predicted (Acc: {accuracy:.1f}%)' if idx == 0 else None,
+            line=dict(color='blue', width=2),
+            showlegend=idx == 0
+        )
+        
+        fig.add_trace(actual_trace, row=row, col=col)
+        fig.add_trace(predicted_trace, row=row, col=col)
+        
+        # Update subplot title to include accuracy
+        fig.layout.annotations[idx].text = f"{titles[idx]} - Accuracy:{accuracy:.2f}%"
+        fig.layout.annotations[idx].font.size = 14  # Reduced title font size
+        fig.layout.annotations[idx].y = fig.layout.annotations[idx].y + 0.02  # Move title up slightly
+    
+    # Update layout with larger dimensions
+    fig.update_layout(
+        height=450 * num_rows,  # Slightly increased height to accommodate title spacing
+        width=1000,
+        title_text="Radar Chart Comparison: Actual vs. Predicted",
+        title_font_size=18,  # Main title size
+        showlegend=True,
+        legend=dict(
+            yanchor="top",
+            y=0.99,
+            xanchor="right",
+            x=0.99,
+            font=dict(size=12)
+        ),
+        polar=dict(
+            radialaxis=dict(
+                visible=True,
+                range=[0, max(
+                    actual_df.values.max(),
+                    predicted_df.values.max()
+                )]
+            )
+        ),
+        margin=dict(t=120, b=80, l=100, r=100)  # Increased top margin for titles
+    )
+    
+    # Update polar axes for each subplot
+    for i in range(1, num_rows + 1):
+        fig.update_polars(
+            dict(
+                radialaxis=dict(
+                    visible=True,
+                    showline=True,
+                    showticklabels=True,
+                    gridcolor="lightgrey",
+                    gridwidth=0.5,
+                    tickfont=dict(size=8),  # Reduced radial axis font size
+                ),
+                angularaxis=dict(
+                    showline=True,
+                    showticklabels=True,
+                    gridcolor="lightgrey",
+                    gridwidth=0.5,
+                    tickfont=dict(size=8),  # Reduced angular axis font size
+                    rotation=90,
+                    direction="clockwise"
+                )
+            ),
+            row=i,
+            col=1
+        )
+    
+    # Display the plot
+    fig.show()
+
+# Plot radar chart comparisons
+plotly_radar_crosstable_comparison(actual_dfs, predicted_dfs, titles)
