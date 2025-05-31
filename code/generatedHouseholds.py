@@ -166,7 +166,7 @@ class EnhancedGNNModelHousehold(torch.nn.Module):
         self.graph_norm4 = GraphNorm(hidden_channels)
         
         # Dropout layer
-        self.dropout = torch.nn.Dropout(0.1)
+        # self.dropout = torch.nn.Dropout(0.1)
         
         # MLP layers for each classification target
         self.mlp_hh = torch.nn.Sequential(
@@ -274,10 +274,21 @@ def train_model(lr, hidden_channels, num_epochs, data, targets):
         total_loss = loss_hh + loss_feature
         return total_loss
 
+    # Custom accuracy function for multi-task learning
+    def calculate_task_accuracy(pred_1, pred_2, target_1, target_2):
+        pred_1_labels = pred_1.argmax(dim=1)
+        pred_2_labels = pred_2.argmax(dim=1)
+        correct = ((pred_1_labels == target_1) & (pred_2_labels == target_2)).float()
+        accuracy = correct.mean().item()
+        return accuracy
+
     loss_data = {}
     accuracy_data = {}
     best_epoch_loss = float('inf')
     best_epoch_state = None
+    
+    # Storage for tracking metrics across epochs
+    epoch_accuracies = []
 
     # Training loop
     for epoch in range(num_epochs):
@@ -294,11 +305,26 @@ def train_model(lr, hidden_channels, num_epochs, data, targets):
 
         # Calculate loss
         loss = 0
+        epoch_task_accuracies = []
+        
+        # Calculate losses and accuracies for all target combinations
         for i in range(len(targets)):
-            loss += custom_loss_function(
+            current_loss = custom_loss_function(
                 out[targets[i][0][0]], out[targets[i][0][1]],
                 targets[i][1][0], targets[i][1][1]
             )
+            loss += current_loss
+            
+            # Calculate accuracy for this task
+            task_accuracy = calculate_task_accuracy(
+                out[targets[i][0][0]], out[targets[i][0][1]],
+                targets[i][1][0], targets[i][1][1]
+            )
+            epoch_task_accuracies.append(task_accuracy)
+
+        # Calculate average accuracy for this epoch
+        avg_epoch_accuracy = sum(epoch_task_accuracies) / len(epoch_task_accuracies)
+        epoch_accuracies.append(avg_epoch_accuracy)
         
         # Store best epoch state
         if loss.item() < best_epoch_loss:
@@ -314,7 +340,10 @@ def train_model(lr, hidden_channels, num_epochs, data, targets):
 
         # Print metrics every 100 epochs to reduce output
         if (epoch + 1) % 100 == 0:
-            print(f'Epoch {epoch+1}/{num_epochs}, Loss: {loss.item():.4f}')
+            print(f'Epoch {epoch+1}/{num_epochs}, Loss: {loss.item():.4f}, Accuracy: {avg_epoch_accuracy:.4f}')
+
+    # Calculate average accuracy across all epochs
+    average_accuracy = sum(epoch_accuracies) / len(epoch_accuracies)
 
     # Load best epoch state for evaluation
     model.load_state_dict(best_epoch_state)
@@ -336,6 +365,7 @@ def train_model(lr, hidden_channels, num_epochs, data, targets):
         
         # Calculate accuracy across all target combinations
         net_accuracy = 0
+        final_task_accuracies = {}
         for i in range(len(targets)):
             # Get predictions for the current target combination (e.g., hhcomp+religion or hhcomp+ethnicity)
             pred_1 = out[targets[i][0][0]].argmax(dim=1)  # First attribute prediction (e.g., household composition)
@@ -347,22 +377,28 @@ def train_model(lr, hidden_channels, num_epochs, data, targets):
             
             # Accumulate accuracy across all target combinations
             net_accuracy += task_net_accuracy
+            task_name = '_'.join(targets[i][0])
+            final_task_accuracies[task_name] = task_net_accuracy * 100
         
-        avg_accuracy = net_accuracy / len(targets)
+        final_accuracy = net_accuracy / len(targets)
+        
+        # Print final task accuracies
+        for task, acc in final_task_accuracies.items():
+            print(f"{task} final accuracy: {acc:.2f}%")
         
         # Update best model info if this model performs better
         global best_model_info
-        if avg_accuracy > best_model_info['accuracy'] or (avg_accuracy == best_model_info['accuracy'] and best_epoch_loss < best_model_info['loss']):
+        if final_accuracy > best_model_info['accuracy'] or (final_accuracy == best_model_info['accuracy'] and best_epoch_loss < best_model_info['loss']):
             best_model_info.update({
                 'model_state': best_epoch_state,
                 'loss': best_epoch_loss,
-                'accuracy': avg_accuracy,
+                'accuracy': final_accuracy,
                 'predictions': (hh_pred, ethnicity_pred, religion_pred),
                 'lr': lr,
                 'hidden_channels': hidden_channels
             })
     
-    return best_epoch_loss, avg_accuracy, (hh_pred, ethnicity_pred, religion_pred)
+    return best_epoch_loss, average_accuracy, final_accuracy, (hh_pred, ethnicity_pred, religion_pred)
 
 # Run grid search over hyperparameters
 total_start_time = time.time()
@@ -375,7 +411,7 @@ for lr in learning_rates:
         start_time = time.time()
         
         # Train the model for the current combination of hyperparameters
-        final_loss, avg_accuracy, predictions = train_model(lr, hidden_channels, num_epochs, data, targets)
+        final_loss, average_accuracy, final_accuracy, predictions = train_model(lr, hidden_channels, num_epochs, data, targets)
         
         # End timing for this combination
         end_time = time.time()
@@ -387,7 +423,8 @@ for lr in learning_rates:
             'learning_rate': lr,
             'hidden_channels': hidden_channels,
             'final_loss': final_loss,
-            'average_accuracy': avg_accuracy,
+            'average_accuracy': average_accuracy,
+            'final_accuracy': final_accuracy,
             'training_time': train_time_str
         })
         
@@ -400,7 +437,7 @@ for lr in learning_rates:
 
         # Print the results for the current run
         print(f"Finished training with lr={lr}, hidden_channels={hidden_channels}")
-        print(f"Final Loss: {final_loss}, Average Accuracy: {avg_accuracy}")
+        print(f"Final Loss: {final_loss}, Average Accuracy: {average_accuracy:.4f}, Final Accuracy: {final_accuracy:.4f}")
         print(f"Training time: {train_time_str}")
 
 # Calculate total training time
