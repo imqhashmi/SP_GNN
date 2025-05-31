@@ -761,25 +761,29 @@ def plotly_crosstable_comparison(
         actual_df = actual_dfs[crosstable_key]
         predicted_df = predicted_dfs[crosstable_key]
         
-        # Flatten the dataframes to create 1D arrays for bar charts
-        # We'll create key strings from the row and column indices
         actual_vals = []
         predicted_vals = []
-        all_keys = []
+        original_indices = []  # Store original indices from glossary
         
+        sequential_index = 1  # Start from 1 to match glossary numbering
         for i, row_idx in enumerate(actual_df.index):
             for j, col_idx in enumerate(actual_df.columns):
-                key = f"{row_idx} {col_idx}" if show_keys else f"{i},{j}"
                 a_val = actual_df.iloc[i, j]
                 p_val = predicted_df.iloc[i, j]
                 
                 if not filter_zero_bars or not (a_val == 0 and p_val == 0):
-                    all_keys.append(key)
                     actual_vals.append(a_val)
                     predicted_vals.append(p_val)
+                    original_indices.append(sequential_index)  # Keep original glossary index
+                
+                sequential_index += 1  # Always increment to maintain glossary alignment
         
-        # Create sequential x-axis labels
-        x_labels = list(range(1, len(actual_vals) + 1))
+        # Use original indices as x-axis labels
+        x_labels = original_indices
+        
+        # Create continuous positions for bars (no gaps) but keep original indices as labels
+        continuous_positions = list(range(1, len(actual_vals) + 1))
+        original_indices_labels = original_indices
         
         # Calculate weighted accuracy metric
         total_actual = np.sum(actual_vals)
@@ -790,9 +794,9 @@ def plotly_crosstable_comparison(
                     accuracy += max(0, 1 - abs(p_val - a_val) / a_val) * (a_val / total_actual)
         accuracy *= 100.0
         
-        # Create bar traces
+        # Create bar traces using continuous positions
         actual_trace = go.Bar(
-            x=x_labels,
+            x=continuous_positions,
             y=actual_vals,
             name='Actual' if idx == 0 else None,
             marker_color='red',
@@ -801,7 +805,7 @@ def plotly_crosstable_comparison(
         )
         
         predicted_trace = go.Bar(
-            x=x_labels,
+            x=continuous_positions,
             y=predicted_vals,
             name='Predicted' if idx == 0 else None,
             marker_color='blue',
@@ -813,8 +817,16 @@ def plotly_crosstable_comparison(
         fig.add_trace(predicted_trace, row=row, col=col)
         
         # Update subplot title to include accuracy
-        # fig.layout.annotations[idx].text = f"{titles[idx]} - Accuracy: {accuracy:.2f}%"
         fig.layout.annotations[idx].text = f"{titles[idx]} - Accuracy:{accuracy:.2f}%"
+        
+        # Update x-axis to show original indices as labels at continuous positions
+        fig.update_xaxes(
+            ticktext=original_indices_labels,
+            tickvals=continuous_positions,
+            tickangle=90,  # Angle the labels for better readability
+            row=row,
+            col=col
+        )
     
     # Update layout
     fig.update_layout(
@@ -831,22 +843,17 @@ def plotly_crosstable_comparison(
         )
     )
     
-    fig.update_xaxes(
+    fig.update_yaxes(
         tickcolor='black',
         ticks="outside",
         tickwidth=2,
         showline=True,
         linecolor='black',
-        linewidth=2,
-        tickmode='linear',
-        tick0=1,
-        dtick=1
+        linewidth=2
     )
     
-    fig.update_yaxes(
-        tickcolor='black',
-        ticks="outside",
-        tickwidth=2,
+    # Add x-axis line styling without overriding tick settings
+    fig.update_xaxes(
         showline=True,
         linecolor='black',
         linewidth=2
@@ -900,7 +907,11 @@ def plotly_radar_crosstable_comparison(actual_dfs, predicted_dfs, titles):
         num_points = len(actual_vals)
         
         # Determine step size for labels based on number of points
-        if num_points > 40:
+        if num_points > 400:
+            step_size = 16
+        elif num_points > 200:
+            step_size = 8
+        elif num_points > 40:
             step_size = 4
         elif num_points > 30:
             step_size = 3
@@ -1046,3 +1057,74 @@ plotly_crosstable_comparison(actual_dfs, predicted_dfs, titles, show_keys=False,
 
 # Create Plotly radar crosstable plots
 plotly_radar_crosstable_comparison(actual_dfs, predicted_dfs, titles)
+
+# Create glossary tables for crosstable numeric indices
+def create_crosstable_glossary(row_categories, col_categories, crosstable_name):
+    """
+    Creates a glossary mapping numeric indices to actual category labels for crosstables.
+    
+    Parameters:
+    row_categories - List of row categories (e.g., household compositions)
+    col_categories - List of column categories (e.g., ethnicity or religion)
+    crosstable_name - Name of the crosstable for the CSV filename
+    
+    Returns:
+    DataFrame with columns: Numeric_Index, Row_Category, Column_Category, Full_Label
+    """
+    glossary_data = []
+    
+    sequential_index = 1  # Start from 1 to match x_labels generation
+    for i, row_cat in enumerate(row_categories):
+        for j, col_cat in enumerate(col_categories):
+            full_label = f"{row_cat} {col_cat}"
+            
+            glossary_data.append({
+                'Sequential_Index': sequential_index,
+                # 'Row_Index': i,
+                # 'Column_Index': j,
+                # 'Row_Category': row_cat,
+                # 'Column_Category': col_cat,
+                'Full_Label': full_label
+            })
+            
+            sequential_index += 1
+    
+    glossary_df = pd.DataFrame(glossary_data)
+    
+    # Save to CSV
+    glossary_path = os.path.join(output_dir, f'glossary_{crosstable_name}.csv')
+    glossary_df.to_csv(glossary_path, index=False)
+    print(f"Glossary for {crosstable_name} saved to: {glossary_path}")
+    
+    return glossary_df
+
+# Create glossaries for both crosstables
+print("\n" + "="*60)
+print("CREATING CROSSTABLE GLOSSARIES")
+print("="*60)
+
+# Glossary for Household Composition by Ethnicity
+hh_ethnicity_glossary = create_crosstable_glossary(
+    hh_compositions, 
+    ethnicity_categories, 
+    'HH_Composition_by_Ethnicity'
+)
+
+print(f"\nHousehold Composition by Ethnicity Glossary:")
+print(f"Total combinations: {len(hh_ethnicity_glossary)}")
+print("Sample entries:")
+print(hh_ethnicity_glossary.head(10))
+
+# Glossary for Household Composition by Religion
+hh_religion_glossary = create_crosstable_glossary(
+    hh_compositions, 
+    religion_categories, 
+    'HH_Composition_by_Religion'
+)
+
+print(f"\nHousehold Composition by Religion Glossary:")
+print(f"Total combinations: {len(hh_religion_glossary)}")
+print("Sample entries:")
+print(hh_religion_glossary.head(10))
+
+print(f"\nAll glossary files saved to: {output_dir}")

@@ -940,36 +940,48 @@ def plotly_crosstable_comparison(
         # Flatten the dataframes to create 1D arrays for bar charts
         actual_vals = []
         predicted_vals = []
-        all_keys = []
+        original_indices = []  # Store original indices from glossary
         
+        sequential_index = 1  # Start from 1 to match glossary numbering
         for i, row_idx in enumerate(actual_df.index):
             for j, col_idx in enumerate(actual_df.columns):
-                key = f"{row_idx} {col_idx}" if show_keys else f"{i},{j}"
                 a_val = actual_df.iloc[i, j]
                 p_val = predicted_df.iloc[i, j]
                 
                 if not filter_zero_bars or not (a_val == 0 and p_val == 0):
-                    all_keys.append(key)
                     actual_vals.append(a_val)
                     predicted_vals.append(p_val)
+                    original_indices.append(sequential_index)  # Keep original glossary index
+                
+                sequential_index += 1  # Always increment to maintain glossary alignment
         
-        # Create sequential x-axis labels
-        x_labels = list(range(1, len(actual_vals) + 1))
+        # Use original indices as x-axis labels
+        x_labels = original_indices
+        
+        # Create continuous positions for bars (no gaps) but keep original indices as labels
+        continuous_positions = list(range(1, len(actual_vals) + 1))
+        original_indices_labels = original_indices
         
         # Calculate label step size based on number of bars
         # Show fewer labels if there are many bars
-        num_bars = len(x_labels)
-        if num_bars > 40:
-            step_size = 4
-        elif num_bars > 30:
+        num_bars = len(continuous_positions)
+        if num_bars > 300:
             step_size = 3
-        elif num_bars > 20:
+        elif num_bars > 100:
             step_size = 2
         else:
             step_size = 1
             
         # Create visible labels array with appropriate step size
-        visible_labels = [i if i % step_size == 0 else "" for i in x_labels]
+        visible_labels = []
+        visible_positions = []
+        for i, (pos, label) in enumerate(zip(continuous_positions, original_indices_labels)):
+            if i % step_size == 0:
+                visible_labels.append(str(label))
+                visible_positions.append(pos)
+            else:
+                visible_labels.append("")
+                visible_positions.append(pos)
         
         # Calculate weighted accuracy metric
         total_actual = np.sum(actual_vals)
@@ -980,9 +992,9 @@ def plotly_crosstable_comparison(
                     accuracy += max(0, 1 - abs(p_val - a_val) / a_val) * (a_val / total_actual)
         accuracy *= 100.0
         
-        # Create bar traces
+        # Create bar traces using continuous positions
         actual_trace = go.Bar(
-            x=x_labels,
+            x=continuous_positions,
             y=actual_vals,
             name='Actual' if idx == 0 else None,
             marker_color='red',
@@ -991,7 +1003,7 @@ def plotly_crosstable_comparison(
         )
         
         predicted_trace = go.Bar(
-            x=x_labels,
+            x=continuous_positions,
             y=predicted_vals,
             name='Predicted' if idx == 0 else None,
             marker_color='blue',
@@ -1005,10 +1017,10 @@ def plotly_crosstable_comparison(
         # Update subplot title to include accuracy
         fig.layout.annotations[idx].text = f"{titles[idx]} - Accuracy:{accuracy:.2f}%"
         
-        # Update x-axis for this subplot with custom labels
+        # Update x-axis to show original indices as labels at continuous positions
         fig.update_xaxes(
             ticktext=visible_labels,
-            tickvals=x_labels,
+            tickvals=visible_positions,
             tickangle=90,  # Angle the labels for better readability
             row=row,
             col=col
@@ -1029,7 +1041,7 @@ def plotly_crosstable_comparison(
         )
     )
     
-    fig.update_xaxes(
+    fig.update_yaxes(
         tickcolor='black',
         ticks="outside",
         tickwidth=2,
@@ -1038,10 +1050,8 @@ def plotly_crosstable_comparison(
         linewidth=2
     )
     
-    fig.update_yaxes(
-        tickcolor='black',
-        ticks="outside",
-        tickwidth=2,
+    # Add x-axis line styling without overriding tick settings
+    fig.update_xaxes(
         showline=True,
         linecolor='black',
         linewidth=2
@@ -1142,7 +1152,11 @@ def plotly_radar_crosstable_comparison(actual_dfs, predicted_dfs, titles):
         num_points = len(actual_vals)
         
         # Determine step size for labels based on number of points
-        if num_points > 40:
+        if num_points > 400:
+            step_size = 16
+        elif num_points > 200:
+            step_size = 8
+        elif num_points > 40:
             step_size = 4
         elif num_points > 30:
             step_size = 3
@@ -1255,3 +1269,89 @@ def plotly_radar_crosstable_comparison(actual_dfs, predicted_dfs, titles):
 
 # Plot radar chart comparisons
 plotly_radar_crosstable_comparison(actual_dfs, predicted_dfs, titles)
+
+# Create glossary tables for crosstable numeric indices
+def create_crosstable_glossary_individuals(row_categories, col_categories, crosstable_name):
+    """
+    Creates a glossary mapping numeric indices to actual category labels for crosstables.
+    
+    Parameters:
+    row_categories - List of row categories (e.g., ethnicity, religion, marital categories)
+    col_categories - List of column categories (age-sex combinations)
+    crosstable_name - Name of the crosstable for the CSV filename
+    
+    Returns:
+    DataFrame with columns: Sequential_Index, Row_Category, Column_Category, Full_Label
+    """
+    glossary_data = []
+    
+    sequential_index = 1  # Start from 1 to match x_labels generation
+    for i, row_cat in enumerate(row_categories):
+        for j, col_cat in enumerate(col_categories):
+            full_label = f"{row_cat} {col_cat}"
+            
+            glossary_data.append({
+                'Sequential_Index': sequential_index,
+                # 'Row_Index': i,
+                # 'Column_Index': j,
+                # 'Row_Category': row_cat,
+                # 'Column_Category': col_cat,
+                'Full_Label': full_label
+            })
+            
+            sequential_index += 1
+    
+    glossary_df = pd.DataFrame(glossary_data)
+    
+    # Save to CSV
+    glossary_path = os.path.join(output_dir, f'glossary_{crosstable_name}.csv')
+    glossary_df.to_csv(glossary_path, index=False)
+    print(f"Glossary for {crosstable_name} saved to: {glossary_path}")
+    
+    return glossary_df
+
+# Create age-sex combinations for column labels
+age_sex_combinations = [f"{age} {sex}" for age in age_groups for sex in sex_categories]
+
+# Create glossaries for all three crosstables
+print("\n" + "="*60)
+print("CREATING CROSSTABLE GLOSSARIES")
+print("="*60)
+
+# Glossary for Ethnicity by Sex by Age
+ethnicity_sex_age_glossary = create_crosstable_glossary_individuals(
+    ethnicity_categories, 
+    age_sex_combinations, 
+    'Ethnicity_by_Sex_by_Age'
+)
+
+print(f"\nEthnicity by Sex by Age Glossary:")
+print(f"Total combinations: {len(ethnicity_sex_age_glossary)}")
+print("Sample entries:")
+print(ethnicity_sex_age_glossary.head(10))
+
+# Glossary for Religion by Sex by Age
+religion_sex_age_glossary = create_crosstable_glossary_individuals(
+    religion_categories, 
+    age_sex_combinations, 
+    'Religion_by_Sex_by_Age'
+)
+
+print(f"\nReligion by Sex by Age Glossary:")
+print(f"Total combinations: {len(religion_sex_age_glossary)}")
+print("Sample entries:")
+print(religion_sex_age_glossary.head(10))
+
+# Glossary for Marital Status by Sex by Age
+marital_sex_age_glossary = create_crosstable_glossary_individuals(
+    marital_categories, 
+    age_sex_combinations, 
+    'Marital_Status_by_Sex_by_Age'
+)
+
+print(f"\nMarital Status by Sex by Age Glossary:")
+print(f"Total combinations: {len(marital_sex_age_glossary)}")
+print("Sample entries:")
+print(marital_sex_age_glossary.head(10))
+
+print(f"\nAll individual crosstable glossary files saved to: {output_dir}")
