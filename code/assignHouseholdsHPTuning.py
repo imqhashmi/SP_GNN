@@ -8,6 +8,13 @@ import pandas as pd
 # Set print options to display all elements of the tensor
 torch.set_printoptions(edgeitems=torch.inf)
 
+# Check for CUDA availability and set device
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+print(f"Using device: {device}")
+if torch.cuda.is_available():
+    print(f"CUDA device: {torch.cuda.get_device_name(0)}")
+    print(f"CUDA memory: {torch.cuda.get_device_properties(0).total_memory / 1024**3:.1f} GB")
+
 # Step 1: Load the tensors and household size data
 current_dir = os.path.dirname(os.path.abspath(__file__))
 persons_file_path = os.path.join(current_dir, "./outputs/person_nodes.pt")
@@ -22,13 +29,19 @@ hh_size_df = hh_size_df[hh_size_df['geography code'].isin(oxford_areas)]
 person_nodes = torch.load(persons_file_path)  # Example size: (num_persons x 5)
 household_nodes = torch.load(households_file_path)  # Example size: (num_households x 3)
 
+# Move tensors to GPU
+person_nodes = person_nodes.to(device)
+household_nodes = household_nodes.to(device)
+print(f"Moved person_nodes and household_nodes to {device}")
+
 # Define the household composition categories and mapping
 hh_compositions = ['1PE','1PA','1FE','1FM-0C','1FM-2C', '1FM-nA','1FC-0C','1FC-2C','1FC-nA','1FL-nA','1FL-2C','1H-nS','1H-nE','1H-nA', '1H-2C']
 hh_map = {category: i for i, category in enumerate(hh_compositions)}
 reverse_hh_map = {v: k for k, v in hh_map.items()}  # Reverse mapping to decode
 
 # Extract the household composition predictions
-hh_pred = household_nodes[:, 0].long()
+# hh_pred = household_nodes[:, 0].long()
+hh_pred = household_nodes[:, 1].long()
 
 # Flattening size and weight lists
 values_size_org = [k for k in hh_size_df.columns if k not in ['geography code', 'total']]
@@ -57,6 +70,7 @@ def fit_household_size(composition):
 
 # Assign sizes to each household based on its composition
 household_sizes = torch.tensor([fit_household_size(reverse_hh_map[hh_pred[i].item()]) for i in range(len(hh_pred))], dtype=torch.long)
+household_sizes = household_sizes.to(device)
 print("Done assigning household sizes")
 
 # Step 2: Define the GNN model
@@ -83,7 +97,7 @@ def gumbel_softmax(logits, tau=1.0, hard=False):
 
     if hard:
         # Straight-through trick: take the index of the max value, but keep the gradient.
-        y_hard = torch.zeros_like(logits).scatter_(-1, y.argmax(dim=-1, keepdim=True), 1.0)
+        y_hard = torch.zeros_like(logits, device=logits.device).scatter_(-1, y.argmax(dim=-1, keepdim=True), 1.0)
         y = (y_hard - y).detach() + y
     return y
 
@@ -92,11 +106,15 @@ num_persons = person_nodes.size(0)
 num_households = household_sizes.size(0)
 
 # Define the columns for religion and ethnicity 
-religion_col_persons, religion_col_households = 2, 2
-ethnicity_col_persons, ethnicity_col_households = 3, 1
+# Corrected based on actual tensor structures:
+# person_nodes: [ID, Age, Religion, Ethnicity, Marital, Sex]  
+# household_nodes: [ID, HH_Composition, Ethnicity, Religion]
+religion_col_persons, religion_col_households = 2, 3
+ethnicity_col_persons, ethnicity_col_households = 3, 2
 
 # Create the graph with more flexible edge construction (match on religion or ethnicity)
-edge_index_file_path = os.path.join(current_dir, "edge_index.pt")
+# edge_index_file_path = os.path.join(current_dir, "output" , "edge_index.pt")
+edge_index_file_path = "./outputs/edge_index.pt"
 if os.path.exists(edge_index_file_path):
     edge_index = torch.load(edge_index_file_path)
     print(f"Loaded edge index from {edge_index_file_path}")
@@ -121,17 +139,21 @@ else:
     torch.save(edge_index, edge_index_file_path)
     print(f"Edge index saved to {edge_index_file_path}")
 
+# Move edge index to GPU
+edge_index = edge_index.to(device)
+print(f"Moved edge_index to {device}")
+
 # Compute loss function (as in the original code)
 def compute_loss(assignments, household_sizes, person_nodes, household_nodes, religion_loss_weight=1.0, ethnicity_loss_weight=1.0):
     household_counts = assignments.sum(dim=0)  # Sum the soft assignments across households
     size_loss = F.mse_loss(household_counts.float(), household_sizes.float())  # MSE loss for household size
 
-    religion_col_persons, religion_col_households = 2, 2
+    religion_col_persons, religion_col_households = 2, 3
     person_religion = person_nodes[:, religion_col_persons].float()  # Target (ground truth) religion as a float tensor
     predicted_religion_scores = assignments @ household_nodes[:, religion_col_households].float()  # Predicted religion (soft scores)
     religion_loss = F.mse_loss(predicted_religion_scores, person_religion)  # MSE loss for religion
 
-    ethnicity_col_persons, ethnicity_col_households = 3, 1
+    ethnicity_col_persons, ethnicity_col_households = 3, 2
     person_ethnicity = person_nodes[:, ethnicity_col_persons].float()  # Target (ground truth) ethnicity as a float tensor
     predicted_ethnicity_scores = assignments @ household_nodes[:, ethnicity_col_households].float()  # Predicted ethnicity (soft scores)
     ethnicity_loss = F.mse_loss(predicted_ethnicity_scores, person_ethnicity)  # MSE loss for ethnicity
@@ -148,6 +170,7 @@ best_params = {}  # Store the best hyperparameters
 # Function to perform training with given hyperparameters
 def train_model(learning_rate, hidden_channels):
     model = HouseholdAssignmentGNN(in_channels=person_nodes.size(1), hidden_channels=hidden_channels, num_households=household_sizes.size(0))
+    model = model.to(device)  # Move model to GPU
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
     tau = 1.0
 
@@ -160,22 +183,51 @@ def train_model(learning_rate, hidden_channels):
             assignments, household_sizes, person_nodes, household_nodes, religion_loss_weight=1.0, ethnicity_loss_weight=1.0
         )
         total_loss.backward()
+        
+        # Clip gradients to avoid exploding gradients - Check if makes any change
+        # torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+        
         optimizer.step()
         tau = max(0.5, tau * 0.995)
 
+    # Clear model from GPU memory before returning
+    del model
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+        
     return total_loss.item()
 
 # Perform grid search over hyperparameters
 for lr in learning_rates:
     for hidden_dim in hidden_dims:
         print(f"Training with learning rate {lr} and hidden dimension {hidden_dim}")
+        
+        # Print GPU memory before training
+        if torch.cuda.is_available():
+            allocated_before = torch.cuda.memory_allocated(device) / 1024**3
+            print(f"GPU Memory before training: {allocated_before:.2f}GB")
+        
         final_loss = train_model(learning_rate=lr, hidden_channels=hidden_dim)
         print(f"Final loss: {final_loss}")
+        
+        # Print GPU memory after training
+        if torch.cuda.is_available():
+            allocated_after = torch.cuda.memory_allocated(device) / 1024**3
+            print(f"GPU Memory after training: {allocated_after:.2f}GB")
 
         # Track the best performing hyperparameters
         if final_loss < best_loss:
             best_loss = final_loss
             best_params = {'learning_rate': lr, 'hidden_channels': hidden_dim}
+        
+        print("-" * 50)
 
 # Output the best hyperparameters
 print(f"Best hyperparameters: {best_params} with final loss {best_loss}")
+
+# Final GPU cleanup
+if torch.cuda.is_available():
+    torch.cuda.empty_cache()
+    print("GPU cache cleared.")
+
+print("Hyperparameter tuning completed!")

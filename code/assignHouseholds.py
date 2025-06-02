@@ -8,6 +8,13 @@ import pandas as pd
 # Set print options to display all elements of the tensor
 torch.set_printoptions(edgeitems=torch.inf)
 
+# Check for CUDA availability and set device
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+print(f"Using device: {device}")
+if torch.cuda.is_available():
+    print(f"CUDA device: {torch.cuda.get_device_name(0)}")
+    print(f"CUDA memory: {torch.cuda.get_device_properties(0).total_memory / 1024**3:.1f} GB")
+
 # Step 1: Load the tensors and household size data
 current_dir = os.path.dirname(os.path.abspath(__file__))
 persons_file_path = os.path.join(current_dir, "./outputs/person_nodes.pt")
@@ -22,13 +29,19 @@ hh_size_df = hh_size_df[hh_size_df['geography code'].isin(oxford_areas)]
 person_nodes = torch.load(persons_file_path)  # Example size: (num_persons x 5)
 household_nodes = torch.load(households_file_path)  # Example size: (num_households x 3)
 
+# Move tensors to GPU
+person_nodes = person_nodes.to(device)
+household_nodes = household_nodes.to(device)
+print(f"Moved person_nodes and household_nodes to {device}")
+
 # Define the household composition categories and mapping
 hh_compositions = ['1PE','1PA','1FE','1FM-0C','1FM-2C', '1FM-nA','1FC-0C','1FC-2C','1FC-nA','1FL-nA','1FL-2C','1H-nS','1H-nE','1H-nA', '1H-2C']
 hh_map = {category: i for i, category in enumerate(hh_compositions)}
 reverse_hh_map = {v: k for k, v in hh_map.items()}  # Reverse mapping to decode
 
 # Extract the household composition predictions
-hh_pred = household_nodes[:, 0].long()
+# hh_pred = household_nodes[:, 0].long()
+hh_pred = household_nodes[:, 1].long()
 
 # Flattening size and weight lists
 values_size_org = [k for k in hh_size_df.columns if k not in ['geography code', 'total']]
@@ -57,6 +70,7 @@ def fit_household_size(composition):
 
 # Assign sizes to each household based on its composition
 household_sizes = torch.tensor([fit_household_size(reverse_hh_map[hh_pred[i].item()]) for i in range(len(hh_pred))], dtype=torch.long)
+household_sizes = household_sizes.to(device)
 print("Done assigning household sizes")
 
 # Step 2: Define the GNN model
@@ -85,7 +99,7 @@ def gumbel_softmax(logits, tau=1.0, hard=False):
 
     if hard:
         # Straight-through trick: take the index of the max value, but keep the gradient.
-        y_hard = torch.zeros_like(logits).scatter_(-1, y.argmax(dim=-1, keepdim=True), 1.0)
+        y_hard = torch.zeros_like(logits, device=logits.device).scatter_(-1, y.argmax(dim=-1, keepdim=True), 1.0)
         y = (y_hard - y).detach() + y
     return y
 
@@ -94,11 +108,15 @@ num_persons = person_nodes.size(0)
 num_households = household_sizes.size(0)
 
 # Define the columns for religion and ethnicity 
-religion_col_persons, religion_col_households = 2, 2
-ethnicity_col_persons, ethnicity_col_households = 3, 1
+# Corrected based on actual tensor structures:
+# person_nodes: [ID, Age, Religion, Ethnicity, Marital, Sex]  
+# household_nodes: [ID, HH_Composition, Ethnicity, Religion]
+religion_col_persons, religion_col_households = 2, 3
+ethnicity_col_persons, ethnicity_col_households = 3, 2
 
 # Step 3: Create the graph with more flexible edge construction (match on religion or ethnicity)
-edge_index_file_path = os.path.join(current_dir, "edge_index.pt")
+# edge_index_file_path = os.path.join(current_dir, "outputs", "edge_index.pt")
+edge_index_file_path = "./outputs/edge_index.pt"
 if os.path.exists(edge_index_file_path):
     edge_index = torch.load(edge_index_file_path)
     print(f"Loaded edge index from {edge_index_file_path}")
@@ -123,10 +141,16 @@ else:
     torch.save(edge_index, edge_index_file_path)
     print(f"Edge index saved to {edge_index_file_path}")
 
+# Move edge index to GPU
+edge_index = edge_index.to(device)
+print(f"Moved edge_index to {device}")
+
 # Step 4: Initialize the GNN model
 in_channels = person_nodes.size(1)  # Assuming 5 characteristics per person
 hidden_channels = 32  # Increased hidden channels
 model = HouseholdAssignmentGNN(in_channels, hidden_channels, num_households)
+model = model.to(device)  # Move model to GPU
+print(f"Moved model to {device}")
 optimizer = torch.optim.Adam(model.parameters(), lr=0.001)  # Reduced learning rate
 # scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=5)  # Adaptive LR
 
@@ -136,13 +160,13 @@ def compute_loss(assignments, household_sizes, person_nodes, household_nodes, re
     size_loss = F.mse_loss(household_counts.float(), household_sizes.float())  # MSE loss for household size
 
     # 2. Religion loss (MSE for soft probabilities)
-    religion_col_persons, religion_col_households = 2, 2  # Assuming column 2 for religion
+    religion_col_persons, religion_col_households = 2, 3  # Assuming column 2 for religion
     person_religion = person_nodes[:, religion_col_persons].float()  # Target (ground truth) religion as a float tensor
     predicted_religion_scores = assignments @ household_nodes[:, religion_col_households].float()  # Predicted religion (soft scores)
     religion_loss = F.mse_loss(predicted_religion_scores, person_religion)  # MSE loss for religion
 
     # 3. Ethnicity loss (MSE for soft probabilities)
-    ethnicity_col_persons, ethnicity_col_households = 3, 1  # Assuming column 3 for ethnicity
+    ethnicity_col_persons, ethnicity_col_households = 3, 2  # Assuming column 3 for ethnicity
     person_ethnicity = person_nodes[:, ethnicity_col_persons].float()  # Target (ground truth) ethnicity as a float tensor
     predicted_ethnicity_scores = assignments @ household_nodes[:, ethnicity_col_households].float()  # Predicted ethnicity (soft scores)
     ethnicity_loss = F.mse_loss(predicted_ethnicity_scores, person_ethnicity)  # MSE loss for ethnicity
@@ -155,8 +179,8 @@ def compute_loss(assignments, household_sizes, person_nodes, household_nodes, re
 
 # Compliance Accuracy Function (unchanged)
 def calculate_individual_compliance_accuracy(assignments, person_nodes, household_nodes):
-    religion_col_persons, religion_col_households = 2, 2
-    ethnicity_col_persons, ethnicity_col_households = 3, 1
+    religion_col_persons, religion_col_households = 2, 3
+    ethnicity_col_persons, ethnicity_col_households = 3, 2
 
     total_people = assignments.size(0)
     
@@ -189,7 +213,7 @@ def calculate_individual_compliance_accuracy(assignments, person_nodes, househol
 # Household Size Accuracy Function (unchanged)
 def calculate_size_distribution_accuracy(assignments, household_sizes):
     # Step 1: Calculate the predicted sizes (how many people in each household)
-    predicted_counts = torch.zeros_like(household_sizes)  # Start with zeros for each household
+    predicted_counts = torch.zeros_like(household_sizes, device=household_sizes.device)  # Start with zeros for each household
     for household_idx in assignments:
         predicted_counts[household_idx] += 1  # Increment for each assignment
     
@@ -261,3 +285,17 @@ for epoch in range(epochs):
     print(f"Religion compliance accuracy: {religion_compliance * 100:.2f}%")
     print(f"Ethnicity compliance accuracy: {ethnicity_compliance * 100:.2f}%")
     print(f"Household size distribution accuracy: {household_size_accuracy * 100:.2f}%")
+    
+    # Print GPU memory usage if using CUDA
+    if torch.cuda.is_available():
+        allocated = torch.cuda.memory_allocated(device) / 1024**3
+        cached = torch.cuda.memory_reserved(device) / 1024**3
+        print(f"GPU Memory - Allocated: {allocated:.2f}GB, Cached: {cached:.2f}GB")
+    print("-" * 50)
+
+# Clear GPU cache at the end
+if torch.cuda.is_available():
+    torch.cuda.empty_cache()
+    print("GPU cache cleared.")
+
+print("Training completed!")
