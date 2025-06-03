@@ -35,11 +35,16 @@ SCRIPT_OPTIONS = {
         'script': 'assignHouseholds.py', 
         'description': 'Assign individuals to households based on compatibility'
     },
-    # '3': {
+        # '3': {
     #     'name': 'Household Assignment HP Tuning',
     #     'script': 'assignHouseholdsHPTuning.py',
     #     'description': 'Hyperparameter tuning for household assignment models'
     # }
+    '4': {
+        'name': 'Create Master Glossary',
+        'script': 'createGlossary.py',
+        'description': 'Combine all crosstable glossaries into a single master file'
+    }
 }
 
 def display_menu():
@@ -51,7 +56,7 @@ def display_menu():
     for key, value in SCRIPT_OPTIONS.items():
         print(f"{key}. {value['name']}")
         # print(f"   {value['description']}")
-    print("4. Exit")
+    print("5. Exit")
     print("="*60)
 
 def select_area():
@@ -121,9 +126,9 @@ def main():
     
     while True:
         display_menu()
-        choice = input("\nEnter your choice (1-4): ").strip()
+        choice = input("\nEnter your choice (1-5): ").strip()
         
-        if choice == '4':
+        if choice == '5':
             # print("Thank you for using SP_GNN. Goodbye!")
             break
         elif choice in SCRIPT_OPTIONS:
@@ -141,13 +146,13 @@ def main():
             else:
                 input("\nScript execution failed. Press Enter to continue...")
         else:
-            print("Invalid choice. Please enter a number between 1 and 4.")
+            print("Invalid choice. Please enter a number between 1 and 5.")
 
 if __name__ == "__main__":
     # Support command line arguments for automated execution
     parser = argparse.ArgumentParser(description='SP_GNN Synthetic Population Generator')
-    parser.add_argument('--script', choices=['1', '2', '3'], 
-                       help='Script to run (1=Individual, 2=Household, 3=Assignment)')
+    parser.add_argument('--script', choices=['1', '2', '3', '4'], 
+                       help='Script to run (1=Individual, 2=Household, 3=Assignment, 4=Create Master Glossary)')
     parser.add_argument('--area_code', choices=ALL_OXFORD_AREAS,
                        help='Oxford area code to use')
     

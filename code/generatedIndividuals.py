@@ -1370,48 +1370,48 @@ def create_crosstable_glossary_individuals(row_categories, col_categories, cross
     
     return glossary_df
 
-# Create age-sex combinations for column labels
-age_sex_combinations = [f"{age} {sex}" for age in age_groups for sex in sex_categories]
+# # Create age-sex combinations for column labels
+# age_sex_combinations = [f"{age} {sex}" for age in age_groups for sex in sex_categories]
 
-# Create glossaries for all three crosstables
-print("\n" + "="*60)
-print("CREATING CROSSTABLE GLOSSARIES")
-print("="*60)
+# # Create glossaries for all three crosstables
+# print("\n" + "="*60)
+# print("CREATING CROSSTABLE GLOSSARIES")
+# print("="*60)
 
-# Glossary for Ethnicity by Sex by Age
-ethnicity_sex_age_glossary = create_crosstable_glossary_individuals(
-    ethnicity_categories, 
-    age_sex_combinations, 
-    'Ethnicity_by_Sex_by_Age'
-)
+# # Glossary for Ethnicity by Sex by Age
+# ethnicity_sex_age_glossary = create_crosstable_glossary_individuals(
+#     ethnicity_categories, 
+#     age_sex_combinations, 
+#     'Ethnicity_by_Sex_by_Age'
+# )
 
-print(f"\nEthnicity by Sex by Age Glossary:")
-print(f"Total combinations: {len(ethnicity_sex_age_glossary)}")
-print("Sample entries:")
-print(ethnicity_sex_age_glossary.head(10))
+# print(f"\nEthnicity by Sex by Age Glossary:")
+# print(f"Total combinations: {len(ethnicity_sex_age_glossary)}")
+# print("Sample entries:")
+# print(ethnicity_sex_age_glossary.head(10))
 
-# Glossary for Religion by Sex by Age
-religion_sex_age_glossary = create_crosstable_glossary_individuals(
-    religion_categories, 
-    age_sex_combinations, 
-    'Religion_by_Sex_by_Age'
-)
+# # Glossary for Religion by Sex by Age
+# religion_sex_age_glossary = create_crosstable_glossary_individuals(
+#     religion_categories, 
+#     age_sex_combinations, 
+#     'Religion_by_Sex_by_Age'
+# )
 
-print(f"\nReligion by Sex by Age Glossary:")
-print(f"Total combinations: {len(religion_sex_age_glossary)}")
-print("Sample entries:")
-print(religion_sex_age_glossary.head(10))
+# print(f"\nReligion by Sex by Age Glossary:")
+# print(f"Total combinations: {len(religion_sex_age_glossary)}")
+# print("Sample entries:")
+# print(religion_sex_age_glossary.head(10))
 
-# Glossary for Marital Status by Sex by Age
-marital_sex_age_glossary = create_crosstable_glossary_individuals(
-    marital_categories, 
-    age_sex_combinations, 
-    'Marital_Status_by_Sex_by_Age'
-)
+# # Glossary for Marital Status by Sex by Age
+# marital_sex_age_glossary = create_crosstable_glossary_individuals(
+#     marital_categories, 
+#     age_sex_combinations, 
+#     'Marital_Status_by_Sex_by_Age'
+# )
 
-print(f"\nMarital Status by Sex by Age Glossary:")
-print(f"Total combinations: {len(marital_sex_age_glossary)}")
-print("Sample entries:")
-print(marital_sex_age_glossary.head(10))
+# print(f"\nMarital Status by Sex by Age Glossary:")
+# print(f"Total combinations: {len(marital_sex_age_glossary)}")
+# print("Sample entries:")
+# print(marital_sex_age_glossary.head(10))
 
-print(f"\nAll individual crosstable glossary files saved to: {output_dir}")
+# print(f"\nAll individual crosstable glossary files saved to: {output_dir}")

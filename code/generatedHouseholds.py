@@ -1158,33 +1158,33 @@ def create_crosstable_glossary(row_categories, col_categories, crosstable_name):
     
     return glossary_df
 
-# Create glossaries for both crosstables
-print("\n" + "="*60)
-print("CREATING CROSSTABLE GLOSSARIES")
-print("="*60)
+# # Create glossaries for both crosstables
+# print("\n" + "="*60)
+# print("CREATING CROSSTABLE GLOSSARIES")
+# print("="*60)
 
-# Glossary for Household Composition by Ethnicity
-hh_ethnicity_glossary = create_crosstable_glossary(
-    hh_compositions, 
-    ethnicity_categories, 
-    'HH_Composition_by_Ethnicity'
-)
+# # Glossary for Household Composition by Ethnicity
+# hh_ethnicity_glossary = create_crosstable_glossary(
+#     hh_compositions, 
+#     ethnicity_categories, 
+#     'HH_Composition_by_Ethnicity'
+# )
 
-print(f"\nHousehold Composition by Ethnicity Glossary:")
-print(f"Total combinations: {len(hh_ethnicity_glossary)}")
-print("Sample entries:")
-print(hh_ethnicity_glossary.head(10))
+# print(f"\nHousehold Composition by Ethnicity Glossary:")
+# print(f"Total combinations: {len(hh_ethnicity_glossary)}")
+# print("Sample entries:")
+# print(hh_ethnicity_glossary.head(10))
 
-# Glossary for Household Composition by Religion
-hh_religion_glossary = create_crosstable_glossary(
-    hh_compositions, 
-    religion_categories, 
-    'HH_Composition_by_Religion'
-)
+# # Glossary for Household Composition by Religion
+# hh_religion_glossary = create_crosstable_glossary(
+#     hh_compositions, 
+#     religion_categories, 
+#     'HH_Composition_by_Religion'
+# )
 
-print(f"\nHousehold Composition by Religion Glossary:")
-print(f"Total combinations: {len(hh_religion_glossary)}")
-print("Sample entries:")
-print(hh_religion_glossary.head(10))
+# print(f"\nHousehold Composition by Religion Glossary:")
+# print(f"Total combinations: {len(hh_religion_glossary)}")
+# print("Sample entries:")
+# print(hh_religion_glossary.head(10))
 
-print(f"\nAll glossary files saved to: {output_dir}")
+# print(f"\nAll glossary files saved to: {output_dir}")
