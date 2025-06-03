@@ -47,21 +47,17 @@ def get_target_tensors(cross_table, feature_1_categories, feature_1_map, feature
 # Load the data from individual tables
 current_dir = os.path.dirname(os.path.abspath(__file__))
 age_df = pd.read_csv(os.path.join(current_dir, '../data/preprocessed-data/individuals/Age_Perfect_5yrs.csv'))
+# age_df = pd.read_csv(os.path.join(current_dir, '../data/preprocessed-data/individuals/Age_Simplified.csv'))
 sex_df = pd.read_csv(os.path.join(current_dir, '../data/preprocessed-data/individuals/Sex.csv'))
 ethnicity_df = pd.read_csv(os.path.join(current_dir, '../data/preprocessed-data/individuals/Ethnicity.csv'))
 religion_df = pd.read_csv(os.path.join(current_dir, '../data/preprocessed-data/individuals/Religion.csv'))
 marital_df = pd.read_csv(os.path.join(current_dir, '../data/preprocessed-data/individuals/Marital.csv'))
+# ethnic_by_sex_by_age_df = pd.read_csv(os.path.join(current_dir, '../data/preprocessed-data/crosstables/EthnicityBySexByAge_Simplified.csv'))
+# religion_by_sex_by_age_df = pd.read_csv(os.path.join(current_dir, '../data/preprocessed-data/crosstables/ReligionbySexbyAge_Simplified.csv'))
+# marital_by_sex_by_age_df = pd.read_csv(os.path.join(current_dir, '../data/preprocessed-data/crosstables/MaritalbySexbyAgeModified_Simplified.csv'))
 ethnic_by_sex_by_age_df = pd.read_csv(os.path.join(current_dir, '../data/preprocessed-data/crosstables/EthnicityBySexByAge.csv'))
 religion_by_sex_by_age_df = pd.read_csv(os.path.join(current_dir, '../data/preprocessed-data/crosstables/ReligionbySexbyAge.csv'))
 marital_by_sex_by_age_df = pd.read_csv(os.path.join(current_dir, '../data/preprocessed-data/crosstables/MaritalbySexbyAgeModified.csv'))
-# age_df = pd.read_csv(os.path.join(current_dir, '../../data/preprocessed-data/individual/Age_5yrs.csv'))
-# sex_df = pd.read_csv(os.path.join(current_dir, '../../data/preprocessed-data/individual/Sex.csv'))
-# ethnicity_df = pd.read_csv(os.path.join(current_dir, '../../data/preprocessed-data/individual/Ethnic.csv'))
-# religion_df = pd.read_csv(os.path.join(current_dir, '../../data/preprocessed-data/individual/Religion.csv'))
-# marital_df = pd.read_csv(os.path.join(current_dir, '../../data/preprocessed-data/individual/Marital.csv'))
-# ethnic_by_sex_by_age_df = pd.read_csv(os.path.join(current_dir, '../../data/preprocessed-data/crosstables/ethnic_by_sex_by_age_modified.csv'))
-# religion_by_sex_by_age_df = pd.read_csv(os.path.join(current_dir, '../../data/preprocessed-data/crosstables/religion_by_sex_by_age.csv'))
-# marital_by_sex_by_age_df = pd.read_csv(os.path.join(current_dir, '../../data/preprocessed-data/crosstables/marital_by_sex_by_age.csv'))
 
 # Define the Oxford areas
 oxford_areas = ['E02005924']
@@ -80,6 +76,7 @@ marital_by_sex_by_age_df = marital_by_sex_by_age_df[marital_by_sex_by_age_df['ge
 
 # Define the age groups, sex categories, and ethnicity categories
 age_groups = ['0_4', '5_7', '8_9', '10_14', '15', '16_17', '18_19', '20_24', '25_29', '30_34', '35_39', '40_44', '45_49', '50_54', '55_59', '60_64', '65_69', '70_74', '75_79', '80_84', '85+']
+# age_groups = ['kids', 'adults', 'elders']
 # age_groups = ['0_4', '5_7', '8_9', '10_14', '15', '16_17', '18_19', '20_24', '25_29', '30_44', '45_59', '60_64', '65_74', '75_84', '85_89', '90+']
 sex_categories = ['M', 'F']
 # ethnicity_categories = ['W0', 'M0', 'A0', 'B0', 'O0']
@@ -561,18 +558,18 @@ person_tensor_path = os.path.join(output_dir, 'person_nodes.pt')
 torch.save(person_tensor.cpu(), person_tensor_path)
 print(f"\nBest model outputs saved to {output_dir}")
 
-sex_pred_indices = sex_pred.cpu().numpy()
-age_pred_indices = age_pred.cpu().numpy()
-ethnicity_pred_indices = ethnicity_pred.cpu().numpy()
-religion_pred_indices = religion_pred.cpu().numpy()
-marital_pred_indices = marital_pred.cpu().numpy()
+sex_pred_names = [sex_categories[i] for i in sex_pred.cpu().numpy()]
+age_pred_names = [age_groups[i] for i in age_pred.cpu().numpy()]
+ethnicity_pred_names = [ethnicity_categories[i] for i in ethnicity_pred.cpu().numpy()]
+religion_pred_names = [religion_categories[i] for i in religion_pred.cpu().numpy()]
+marital_pred_names = [marital_categories[i] for i in marital_pred.cpu().numpy()]
 
-# Convert model predictions to category names
-sex_pred_names = [sex_categories[i] for i in sex_pred_indices]
-age_pred_names = [age_groups[i] for i in age_pred_indices]
-ethnicity_pred_names = [ethnicity_categories[i] for i in ethnicity_pred_indices]
-religion_pred_names = [religion_categories[i] for i in religion_pred_indices]
-marital_pred_names = [marital_categories[i] for i in marital_pred_indices]
+# # Calculate predicted distributions
+# sex_pred_counts = dict(Counter([sex_categories[i] for i in sex_pred.cpu().numpy()]))
+# age_pred_counts = dict(Counter([age_groups[i] for i in age_pred.cpu().numpy()]))
+# ethnicity_pred_counts = dict(Counter([ethnicity_categories[i] for i in ethnicity_pred.cpu().numpy()]))
+# religion_pred_counts = dict(Counter([religion_categories[i] for i in religion_pred.cpu().numpy()]))
+# marital_pred_counts = dict(Counter([marital_categories[i] for i in marital_pred.cpu().numpy()]))
 
 # Calculate actual distributions
 sex_actual = {}
@@ -624,6 +621,9 @@ for eth in ethnicity_categories:
     #     if eth not in ethnicity_actual:
     #         ethnicity_actual[eth] = 0
 
+# for ethnicity in ethnicity_categories:
+#     ethnicity_actual[ethnicity] = ethnicity_df[ethnicity].iloc[0]
+
 for rel in religion_categories:
     religion_actual[rel] = religion_df[rel].iloc[0]
     # col_name = f'count-{rel}'
@@ -651,6 +651,9 @@ for mar in marital_categories:
     #             break
     #     if mar not in marital_actual:
     #         marital_actual[mar] = 0
+
+# for marital in marital_categories:
+#     marital_actual[marital] = marital_df[marital].iloc[0]
 
 # If counts are still zero, try extracting from cross-tables
 # if sum(ethnicity_actual.values()) == 0:
