@@ -4,6 +4,20 @@ from torch_geometric.nn import SAGEConv
 import os
 import random
 import pandas as pd
+import argparse
+
+# Add argument parser for command line parameters
+def parse_arguments():
+    parser = argparse.ArgumentParser(description='Assign individuals to households using GNN')
+    parser.add_argument('--area_code', type=str, required=True,
+                       help='Oxford area code to process (e.g., E02005924)')
+    return parser.parse_args()
+
+# Parse command line arguments
+args = parse_arguments()
+selected_area_code = args.area_code
+
+print(f"Running Household Assignment for area: {selected_area_code}")
 
 # Set print options to display all elements of the tensor
 torch.set_printoptions(edgeitems=torch.inf)
@@ -17,15 +31,21 @@ if torch.cuda.is_available():
 
 # Step 1: Load the tensors and household size data
 current_dir = os.path.dirname(os.path.abspath(__file__))
-persons_file_path = os.path.join(current_dir, "./outputs/person_nodes.pt")
-households_file_path = os.path.join(current_dir, "./outputs/household_nodes.pt")
+persons_file_path = os.path.join(current_dir, f"./outputs/individuals_{selected_area_code}/person_nodes.pt")
+households_file_path = os.path.join(current_dir, f"./outputs/households_{selected_area_code}/household_nodes.pt")
 hh_size_df = pd.read_csv(os.path.join(current_dir, '../data/preprocessed-data/individuals/HH_size.csv'))
 
 # Define the Oxford areas
-oxford_areas = ['E02005924']
+# oxford_areas = ['E02005924']
+
+# Use the area code passed from command line
+oxford_areas = [selected_area_code]
+print(f"Processing Oxford area: {oxford_areas[0]}")
 hh_size_df = hh_size_df[hh_size_df['geography code'].isin(oxford_areas)]
 
 # Load the tensors from the files
+# persons_file_path = os.path.join(current_dir, "./outputs/person_nodes.pt")
+# households_file_path = os.path.join(current_dir, "./outputs/household_nodes.pt")
 person_nodes = torch.load(persons_file_path)  # Example size: (num_persons x 5)
 household_nodes = torch.load(households_file_path)  # Example size: (num_households x 3)
 
@@ -116,7 +136,13 @@ ethnicity_col_persons, ethnicity_col_households = 3, 2
 
 # Step 3: Create the graph with more flexible edge construction (match on religion or ethnicity)
 # edge_index_file_path = os.path.join(current_dir, "outputs", "edge_index.pt")
-edge_index_file_path = "./outputs/edge_index.pt"
+# edge_index_file_path = "./outputs/edge_index.pt"
+edge_index_file_path = os.path.join(current_dir, f"./outputs/assignment_{selected_area_code}/edge_index.pt")
+
+# Create output directory for assignment results
+output_dir = os.path.join(current_dir, 'outputs', f'assignment_{selected_area_code}')
+os.makedirs(output_dir, exist_ok=True)
+
 if os.path.exists(edge_index_file_path):
     edge_index = torch.load(edge_index_file_path)
     print(f"Loaded edge index from {edge_index_file_path}")
@@ -298,4 +324,35 @@ if torch.cuda.is_available():
     torch.cuda.empty_cache()
     print("GPU cache cleared.")
 
-print("Training completed!")
+# Save final assignment results
+print(f"\nSaving final assignment results to {output_dir}")
+
+# Save final assignments tensor
+final_assignments_path = os.path.join(output_dir, 'final_assignments.pt')
+torch.save(final_assignments.cpu(), final_assignments_path)
+
+# Create assignment summary
+assignment_summary = {
+    'total_persons': num_persons,
+    'total_households': num_households,
+    'final_religion_compliance': religion_compliance,
+    'final_ethnicity_compliance': ethnicity_compliance,
+    'final_household_size_accuracy': household_size_accuracy,
+    'final_total_loss': total_loss.item(),
+    'final_size_loss': size_loss.item(),
+    'final_religion_loss': religion_loss.item(),
+    'final_ethnicity_loss': ethnicity_loss.item()
+}
+
+# Save assignment summary as JSON
+import json
+summary_path = os.path.join(output_dir, 'assignment_summary.json')
+with open(summary_path, 'w') as f:
+    json.dump(assignment_summary, f, indent=4)
+
+print(f"Assignment completed successfully!")
+print(f"Final Results:")
+print(f"  Religion compliance: {religion_compliance * 100:.2f}%")
+print(f"  Ethnicity compliance: {ethnicity_compliance * 100:.2f}%")
+print(f"  Household size accuracy: {household_size_accuracy * 100:.2f}%")
+print(f"  Results saved to: {output_dir}")

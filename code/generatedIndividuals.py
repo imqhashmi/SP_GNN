@@ -14,6 +14,20 @@ from collections import Counter
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import math
+import argparse
+
+# Add argument parser for command line parameters
+def parse_arguments():
+    parser = argparse.ArgumentParser(description='Generate synthetic individuals using GNN')
+    parser.add_argument('--area_code', type=str, required=True,
+                       help='Oxford area code to process (e.g., E02005924)')
+    return parser.parse_args()
+
+# Parse command line arguments
+args = parse_arguments()
+selected_area_code = args.area_code
+
+print(f"Running Individual Generation for area: {selected_area_code}")
 
 # Device selection with better fallback options
 device = torch.device('cuda' if torch.cuda.is_available() else 
@@ -60,9 +74,13 @@ religion_by_sex_by_age_df = pd.read_csv(os.path.join(current_dir, '../data/prepr
 marital_by_sex_by_age_df = pd.read_csv(os.path.join(current_dir, '../data/preprocessed-data/crosstables/MaritalbySexbyAgeModified.csv'))
 
 # Define the Oxford areas
-oxford_areas = ['E02005924']
+# oxford_areas = ['E02005924']
 # oxford_areas = ['E02005923']
 # oxford_areas = ['E02005925']
+
+# Use the area code passed from command line
+oxford_areas = [selected_area_code]
+print(f"Processing Oxford area: {oxford_areas[0]}")
 
 # Filter the DataFrame for the specified Oxford areas
 age_df = age_df[age_df['geography code'].isin(oxford_areas)]
@@ -475,8 +493,8 @@ for lr in learning_rates:
             'learning_rate': lr,
             'hidden_channels': hidden_channels,
             'final_loss': final_loss,
-            'average_accuracy': average_accuracy,
-            'final_accuracy': final_accuracy,
+            # 'average_accuracy': average_accuracy,
+            'average_accuracy': final_accuracy,
             'training_time': train_time_str
         })
         
@@ -511,7 +529,8 @@ print(f"Best Loss: {best_model_info['loss']:.4f}")
 print(f"Best Accuracy: {best_model_info['accuracy']:.4f}")
 
 # Create output directory if it doesn't exist
-output_dir = os.path.join(current_dir, 'outputs')
+# output_dir = os.path.join(current_dir, 'outputs')
+output_dir = os.path.join(current_dir, 'outputs', f'individuals_{selected_area_code}')
 os.makedirs(output_dir, exist_ok=True)
 
 # Save best model state

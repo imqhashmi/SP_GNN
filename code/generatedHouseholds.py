@@ -14,6 +14,20 @@ import shutil  # For directory operations
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import math
+import argparse
+
+# Add argument parser for command line parameters
+def parse_arguments():
+    parser = argparse.ArgumentParser(description='Generate synthetic households using GNN')
+    parser.add_argument('--area_code', type=str, required=True,
+                       help='Oxford area code to process (e.g., E02005924)')
+    return parser.parse_args()
+
+# Parse command line arguments
+args = parse_arguments()
+selected_area_code = args.area_code
+
+print(f"Running Household Generation for area: {selected_area_code}")
 
 # Set display options permanently
 # pd.set_option('display.max_rows', None)
@@ -62,9 +76,13 @@ hhcomp_by_religion_df = pd.read_csv(os.path.join(current_dir, '../data/preproces
 hhcomp_by_ethnicity_df = pd.read_csv(os.path.join(current_dir, '../data/preprocessed-data/crosstables/HH_composition_by_ethnicity_Updated.csv'))
 
 # Define the Oxford areas
-oxford_areas = ['E02005924']
+# oxford_areas = ['E02005924']
 # oxford_areas = ['E02005923']
 # oxford_areas = ['E02005925']
+
+# Use the area code passed from command line
+oxford_areas = [selected_area_code]
+print(f"Processing Oxford area: {oxford_areas[0]}")
 
 ethnicity_categories = ['W1', 'W2', 'W3', 'W4', 'M1', 'M2', 'M3', 'M4', 'A1', 'A2', 'A3', 'A4', 'A5', 'B1', 'B2', 'B3', 'O1', 'O2']
 religion_categories = ['C','B','H','J','M','S','O','N','NS']
@@ -423,8 +441,8 @@ for lr in learning_rates:
             'learning_rate': lr,
             'hidden_channels': hidden_channels,
             'final_loss': final_loss,
-            'average_accuracy': average_accuracy,
-            'final_accuracy': final_accuracy,
+            # 'average_accuracy': average_accuracy,
+            'average_accuracy': final_accuracy,
             'training_time': train_time_str
         })
         
@@ -458,9 +476,14 @@ print(f"Hidden Channels: {best_model_info['hidden_channels']}")
 print(f"Best Loss: {best_model_info['loss']:.4f}")
 print(f"Best Accuracy: {best_model_info['accuracy']:.4f}")
 
-# Save best model information and results
-output_dir = os.path.join(current_dir, 'outputs')
+# Create output directory if it doesn't exist
+# output_dir = os.path.join(current_dir, 'outputs')
+output_dir = os.path.join(current_dir, 'outputs', f'households_{selected_area_code}')
 os.makedirs(output_dir, exist_ok=True)
+
+# Save best model information and results
+# output_dir = os.path.join(current_dir, 'outputs', f'households_{selected_area_code}')
+# os.makedirs(output_dir, exist_ok=True)
 
 # Save best model predictions
 best_predictions = {

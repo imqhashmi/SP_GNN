@@ -4,6 +4,21 @@ from torch_geometric.nn import SAGEConv
 import os
 import random
 import pandas as pd
+import argparse
+import json
+
+# Add argument parser for command line parameters
+def parse_arguments():
+    parser = argparse.ArgumentParser(description='Hyperparameter tuning for household assignment using GNN')
+    parser.add_argument('--area_code', type=str, required=True,
+                       help='Oxford area code to process (e.g., E02005924)')
+    return parser.parse_args()
+
+# Parse command line arguments
+args = parse_arguments()
+selected_area_code = args.area_code
+
+print(f"Running Household Assignment Hyperparameter Tuning for area: {selected_area_code}")
 
 # Set print options to display all elements of the tensor
 torch.set_printoptions(edgeitems=torch.inf)
@@ -17,12 +32,18 @@ if torch.cuda.is_available():
 
 # Step 1: Load the tensors and household size data
 current_dir = os.path.dirname(os.path.abspath(__file__))
-persons_file_path = os.path.join(current_dir, "./outputs/person_nodes.pt")
-households_file_path = os.path.join(current_dir, "./outputs/household_nodes.pt")
+# persons_file_path = os.path.join(current_dir, "./outputs/person_nodes.pt")
+# households_file_path = os.path.join(current_dir, "./outputs/household_nodes.pt")
+persons_file_path = os.path.join(current_dir, f"./outputs/individuals_{selected_area_code}/person_nodes.pt")
+households_file_path = os.path.join(current_dir, f"./outputs/households_{selected_area_code}/household_nodes.pt")
 hh_size_df = pd.read_csv(os.path.join(current_dir, '../data/preprocessed-data/individuals/HH_size.csv'))
 
 # Define the Oxford areas
-oxford_areas = ['E02005924']
+# oxford_areas = ['E02005924']
+
+# Use the area code passed from command line
+oxford_areas = [selected_area_code]
+print(f"Processing Oxford area: {oxford_areas[0]}")
 hh_size_df = hh_size_df[hh_size_df['geography code'].isin(oxford_areas)]
 
 # Load the tensors from the files
@@ -114,7 +135,13 @@ ethnicity_col_persons, ethnicity_col_households = 3, 2
 
 # Create the graph with more flexible edge construction (match on religion or ethnicity)
 # edge_index_file_path = os.path.join(current_dir, "output" , "edge_index.pt")
-edge_index_file_path = "./outputs/edge_index.pt"
+# edge_index_file_path = "./outputs/edge_index.pt"
+edge_index_file_path = os.path.join(current_dir, f"./outputs/assignment_{selected_area_code}/edge_index.pt")
+
+# Create output directory for assignment results
+output_dir = os.path.join(current_dir, 'outputs', f'assignment_hp_tuning_{selected_area_code}')
+os.makedirs(output_dir, exist_ok=True)
+
 if os.path.exists(edge_index_file_path):
     edge_index = torch.load(edge_index_file_path)
     print(f"Loaded edge index from {edge_index_file_path}")
@@ -167,6 +194,9 @@ hidden_dims = [64, 128, 256]  # Define a range of hidden dimensions
 best_loss = float('inf')  # Initialize best loss to infinity
 best_params = {}  # Store the best hyperparameters
 
+# Store all results for saving
+hp_results = []
+
 # Function to perform training with given hyperparameters
 def train_model(learning_rate, hidden_channels):
     model = HouseholdAssignmentGNN(in_channels=person_nodes.size(1), hidden_channels=hidden_channels, num_households=household_sizes.size(0))
@@ -210,6 +240,13 @@ for lr in learning_rates:
         final_loss = train_model(learning_rate=lr, hidden_channels=hidden_dim)
         print(f"Final loss: {final_loss}")
         
+        # Store results for saving
+        hp_results.append({
+            'learning_rate': lr,
+            'hidden_channels': hidden_dim,
+            'final_loss': final_loss
+        })
+        
         # Print GPU memory after training
         if torch.cuda.is_available():
             allocated_after = torch.cuda.memory_allocated(device) / 1024**3
@@ -224,6 +261,26 @@ for lr in learning_rates:
 
 # Output the best hyperparameters
 print(f"Best hyperparameters: {best_params} with final loss {best_loss}")
+
+# Save hyperparameter tuning results
+# Save results as CSV
+hp_results_df = pd.DataFrame(hp_results)
+hp_results_path = os.path.join(output_dir, 'hp_tuning_results.csv')
+hp_results_df.to_csv(hp_results_path, index=False)
+
+# Save best parameters as JSON
+best_params_with_loss = best_params.copy()
+best_params_with_loss['best_loss'] = best_loss
+best_params_with_loss['total_combinations'] = len(hp_results)
+best_params_with_loss['area_code'] = selected_area_code
+
+best_params_path = os.path.join(output_dir, 'best_hyperparameters.json')
+with open(best_params_path, 'w') as f:
+    json.dump(best_params_with_loss, f, indent=4)
+
+print(f"\nHyperparameter tuning results saved to: {output_dir}")
+print(f"Results CSV: {hp_results_path}")
+print(f"Best parameters JSON: {best_params_path}")
 
 # Final GPU cleanup
 if torch.cuda.is_available():
