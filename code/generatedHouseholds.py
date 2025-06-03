@@ -1109,8 +1109,8 @@ predicted_dfs = {
 }
 
 titles = [
-    'Household Composition by Ethnicity',
-    'Household Composition by Religion'
+    'Household Composition x Ethnicity',
+    'Household Composition x Religion'
 ]
 
 plotly_crosstable_comparison(actual_dfs, predicted_dfs, titles, show_keys=False, filter_zero_bars=True)

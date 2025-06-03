@@ -1162,9 +1162,9 @@ predicted_dfs = {
 # print(predicted_dfs)
 
 titles = [
-    'Ethnicity by Sex by Age Distribution',
-    'Religion by Sex by Age Distribution',
-    'Marital Status by Sex by Age Distribution'
+    'Ethnicity x Sex x Age',
+    'Religion x Sex x Age',
+    'Marital Status x Sex x Age'
 ]
 
 # Plot crosstable comparisons using the same function as in generateHouseholds.py
