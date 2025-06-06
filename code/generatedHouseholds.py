@@ -15,6 +15,8 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import math
 import argparse
+import geopandas as gpd  # Added for geo plotting
+import plotly.express as px  # Added for geo plotting
 
 # Add argument parser for command line parameters
 def parse_arguments():
@@ -40,6 +42,117 @@ device = torch.device('cuda' if torch.cuda.is_available() else
 print(f"Using device: {device}")
 
 torch.set_printoptions(edgeitems=torch.inf)
+
+def create_geo_plot_trace(selected_area_code, current_dir):
+    """
+    Create a geo plot trace showing all areas in white except the selected area code which is shaded.
+    Returns the geo traces that can be added to a subplot.
+    
+    Parameters:
+    selected_area_code - The area code to highlight
+    current_dir - The current directory path for file loading
+    """
+    try:
+        # Define paths relative to the code directory
+        BASE = os.path.join(current_dir, '../data/')
+        PERSONS_DIR = os.path.join(current_dir, '../data/preprocessed-data/individuals')
+        
+        # Load age data and rename the geography code
+        age_file = os.path.join(PERSONS_DIR, "Age_Perfect_5yrs.csv")
+        if not os.path.exists(age_file):
+            print(f"Warning: Age data file not found at {age_file}")
+            return [], {}
+            
+        age = pd.read_csv(age_file)
+        age = age.rename(columns={"geography code": "MSOA21CD"})
+        
+        # Load shapefiles
+        msoa_fp = os.path.join(BASE, "geodata", "MSOA_2021_EW_BGC_V3.shp")
+        red_fp = os.path.join(BASE, "geodata", "boundary.geojson")
+        
+        if not os.path.exists(msoa_fp) or not os.path.exists(red_fp):
+            print(f"Warning: Geodata files not found. Expected at {msoa_fp} and {red_fp}")
+            return [], {}
+        
+        # Read in spatial data
+        gdf_msoa = gpd.read_file(msoa_fp).to_crs(4326)
+        red_bnd = gpd.read_file(red_fp).to_crs(4326)
+        
+        # Merge population totals
+        gdf_msoa = gdf_msoa.merge(age[["MSOA21CD", "total"]], on="MSOA21CD", how="left")
+        gdf_msoa["total"] = gdf_msoa["total"].fillna(0)
+        
+        # Manually remove unwanted MSOAs
+        exclude_codes = [
+            "E02005939", "E02005979", "E02005963", "E02005959"
+        ]
+        gdf_msoa = gdf_msoa[~gdf_msoa["MSOA21CD"].isin(exclude_codes)]
+        
+        # Clip to red boundary
+        red_union = red_bnd.unary_union
+        gdf_clip = gdf_msoa[gdf_msoa.intersects(red_union)].copy()
+        
+        # Create color column: selected area gets color 1, others get color 0
+        gdf_clip["color_value"] = gdf_clip["MSOA21CD"].apply(
+            lambda x: 1 if x == selected_area_code else 0
+        )
+        
+        # Compute accurate centroids for labels
+        proj_crs = 27700
+        gdf_proj = gdf_clip.to_crs(proj_crs)
+        centroids = gdf_proj.geometry.centroid.to_crs(4326)
+        gdf_clip["lon"] = centroids.x
+        gdf_clip["lat"] = centroids.y
+        
+        # Create traces list
+        traces = []
+        
+        # Add choropleth trace
+        choropleth_trace = go.Choropleth(
+            geojson=json.loads(gdf_clip.to_json()),
+            locations=gdf_clip["MSOA21CD"],
+            featureidkey="properties.MSOA21CD",
+            z=gdf_clip["color_value"],
+            colorscale=[[0, "white"], [1, "lightblue"]],  # White for 0, light blue for selected
+            showscale=False,
+            hovertemplate="<b>%{location}</b><extra></extra>",
+            name="Areas"
+        )
+        traces.append(choropleth_trace)
+        
+        # Add red boundary outline
+        for poly in red_bnd.geometry.explode(index_parts=False):
+            boundary_trace = go.Scattergeo(
+                lon=list(poly.exterior.coords.xy[0]),
+                lat=list(poly.exterior.coords.xy[1]),
+                mode='lines',
+                line=dict(color='red', width=2),
+                showlegend=False,
+                hoverinfo="skip"
+            )
+            traces.append(boundary_trace)
+        
+        # Calculate bounds for the geo layout with reduced padding for bigger geo plots
+        # Use red boundary bounds instead of just clipped areas for better coverage
+        red_bounds = red_bnd.total_bounds  # [minx, miny, maxx, maxy]
+        lon_min, lat_min, lon_max, lat_max = red_bounds
+        
+        # Reduce padding to make geo plots bigger within their allocated space
+        lat_padding = (lat_max - lat_min) * 0.1  # Reduced to 10% padding (was 30%)
+        lon_padding = (lon_max - lon_min) * 0.1  # Reduced to 10% padding (was 30%)
+        
+        geo_layout = {
+            'visible': False,
+            'lataxis_range': [lat_min - lat_padding, lat_max + lat_padding],
+            'lonaxis_range': [lon_min - lon_padding, lon_max + lon_padding],
+            'projection_type': 'mercator'
+        }
+        
+        return traces, geo_layout
+        
+    except Exception as e:
+        print(f"Warning: Could not create geo plot trace: {e}")
+        return [], {}
 
 def get_target_tensors(cross_table, hh_categories, hh_map, feature_categories, feature_map):
     y_hh = torch.zeros(num_households, dtype=torch.long, device=device)
@@ -184,7 +297,7 @@ class EnhancedGNNModelHousehold(torch.nn.Module):
         self.graph_norm4 = GraphNorm(hidden_channels)
         
         # Dropout layer
-        # self.dropout = torch.nn.Dropout(0.1)
+        # self.dropout = torch.nn.Dropout(0.5)
         
         # MLP layers for each classification target
         self.mlp_hh = torch.nn.Sequential(
@@ -272,6 +385,84 @@ best_model_info = {
     'training_time': None
 }
 
+# Function to calculate R-squared accuracy
+def calculate_r2_accuracy(generated_counts, target_counts):
+    """
+    Simple R² measure comparing two distributions:
+    R² = 1 - (SSE / SST), with SSE = sum of squared errors
+    """
+    gen_vals = np.array(list(generated_counts.values()), dtype=float)
+    tgt_vals = np.array(list(target_counts.values()), dtype=float)
+
+    sse = np.sum((gen_vals - tgt_vals) ** 2)
+    sst = np.sum((tgt_vals - tgt_vals.mean()) ** 2)
+
+    return 1.0 - sse / sst if sst > 1e-12 else 1.0
+
+# Optimized GPU-friendly accuracy function for multi-task learning
+def calculate_distribution_task_accuracy(pred_1, pred_2, target_combination, actual_crosstable):
+    """
+    Fast GPU-optimized distribution-based accuracy calculation.
+    Uses tensor operations instead of pandas for speed during training.
+    """
+    categories_1, categories_2 = target_combination
+    
+    # Map attribute names to category counts
+    category_sizes = {
+        'hhcomp': len(hh_compositions),
+        'ethnicity': len(ethnicity_categories),
+        'religion': len(religion_categories)
+    }
+    
+    size_1 = category_sizes[categories_1]
+    size_2 = category_sizes[categories_2]
+    
+    # Create predicted counts tensor (keep on GPU)
+    # Use a flattened approach: combination_idx = pred_1 * size_2 + pred_2
+    combo_indices = pred_1 * size_2 + pred_2
+    total_combinations = size_1 * size_2
+    
+    # Count occurrences efficiently on GPU
+    predicted_counts = torch.bincount(combo_indices, minlength=total_combinations).float()
+    
+    # Pre-compute actual counts tensor (do this only once, not every epoch)
+    cache_key = f'actual_counts_{categories_1}_{categories_2}'
+    if not hasattr(calculate_distribution_task_accuracy, cache_key):
+        # Extract actual counts and convert to tensor format
+        actual_counts_tensor = torch.zeros(total_combinations, dtype=torch.float, device=device)
+        
+        category_map = {
+            'hhcomp': hh_compositions,
+            'ethnicity': ethnicity_categories,
+            'religion': religion_categories
+        }
+        
+        cats_1 = category_map[categories_1]
+        cats_2 = category_map[categories_2]
+        
+        for i1, cat1 in enumerate(cats_1):
+            for i2, cat2 in enumerate(cats_2):
+                original_col = f'{cat1} {cat2}'
+                if original_col in actual_crosstable.columns:
+                    combo_idx = i1 * size_2 + i2
+                    actual_counts_tensor[combo_idx] = actual_crosstable[original_col].iloc[0]
+        
+        # Cache the result to avoid recomputation
+        setattr(calculate_distribution_task_accuracy, cache_key, actual_counts_tensor)
+    
+    actual_counts = getattr(calculate_distribution_task_accuracy, cache_key)
+    
+    # Calculate R² efficiently on GPU
+    actual_mean = actual_counts.mean()
+    ss_tot = torch.sum((actual_counts - actual_mean) ** 2)
+    ss_res = torch.sum((actual_counts - predicted_counts) ** 2)
+    
+    if ss_tot > 1e-12:
+        r2 = 1.0 - (ss_res / ss_tot)
+        return max(0.0, r2.item())  # Ensure non-negative and convert to Python float
+    else:
+        return 1.0
+
 # Function to train model
 def train_model(lr, hidden_channels, num_epochs, data, targets):
     # Initialize model, optimizer, and loss functions
@@ -291,14 +482,6 @@ def train_model(lr, hidden_channels, num_epochs, data, targets):
         loss_feature = F.cross_entropy(feature_out, y_feature)
         total_loss = loss_hh + loss_feature
         return total_loss
-
-    # Custom accuracy function for multi-task learning
-    def calculate_task_accuracy(pred_1, pred_2, target_1, target_2):
-        pred_1_labels = pred_1.argmax(dim=1)
-        pred_2_labels = pred_2.argmax(dim=1)
-        correct = ((pred_1_labels == target_1) & (pred_2_labels == target_2)).float()
-        accuracy = correct.mean().item()
-        return accuracy
 
     loss_data = {}
     accuracy_data = {}
@@ -323,9 +506,8 @@ def train_model(lr, hidden_channels, num_epochs, data, targets):
 
         # Calculate loss
         loss = 0
-        epoch_task_accuracies = []
         
-        # Calculate losses and accuracies for all target combinations
+        # Calculate losses for all target combinations
         for i in range(len(targets)):
             current_loss = custom_loss_function(
                 out[targets[i][0][0]], out[targets[i][0][1]],
@@ -333,16 +515,31 @@ def train_model(lr, hidden_channels, num_epochs, data, targets):
             )
             loss += current_loss
             
-            # Calculate accuracy for this task
-            task_accuracy = calculate_task_accuracy(
-                out[targets[i][0][0]], out[targets[i][0][1]],
-                targets[i][1][0], targets[i][1][1]
-            )
-            epoch_task_accuracies.append(task_accuracy)
+        # Calculate accuracy only every 100 epochs to speed up training
+        if (epoch + 1) % 100 == 0:
+            epoch_task_accuracies = []
+            for i in range(len(targets)):
+                # Calculate distribution-based accuracy for this task
+                pred_1 = out[targets[i][0][0]].argmax(dim=1)
+                pred_2 = out[targets[i][0][1]].argmax(dim=1)
+                
+                # Get the corresponding actual cross-table
+                if i == 0:  # hhcomp-religion
+                    actual_crosstable = hhcomp_by_religion_df
+                else:  # hhcomp-ethnicity
+                    actual_crosstable = hhcomp_by_ethnicity_df
+                
+                task_distribution_accuracy = calculate_distribution_task_accuracy(
+                    pred_1, pred_2, targets[i][0], actual_crosstable
+                )
+                epoch_task_accuracies.append(task_distribution_accuracy)
 
-        # Calculate average accuracy for this epoch
-        avg_epoch_accuracy = sum(epoch_task_accuracies) / len(epoch_task_accuracies)
-        epoch_accuracies.append(avg_epoch_accuracy)
+            # Calculate average accuracy for this epoch
+            avg_epoch_accuracy = sum(epoch_task_accuracies) / len(epoch_task_accuracies)
+            epoch_accuracies.append(avg_epoch_accuracy)
+            
+            # Print metrics every 100 epochs
+            print(f'Epoch {epoch+1}/{num_epochs}, Loss: {loss.item():.4f}, Distribution Accuracy: {avg_epoch_accuracy:.4f}')
         
         # Store best epoch state
         if loss.item() < best_epoch_loss:
@@ -356,12 +553,8 @@ def train_model(lr, hidden_channels, num_epochs, data, targets):
         # Store loss data for each epoch
         loss_data[epoch] = loss.item()
 
-        # Print metrics every 100 epochs to reduce output
-        if (epoch + 1) % 100 == 0:
-            print(f'Epoch {epoch+1}/{num_epochs}, Loss: {loss.item():.4f}, Accuracy: {avg_epoch_accuracy:.4f}')
-
     # Calculate average accuracy across all epochs
-    average_accuracy = sum(epoch_accuracies) / len(epoch_accuracies)
+    average_accuracy = sum(epoch_accuracies) / len(epoch_accuracies) if epoch_accuracies else 0
 
     # Load best epoch state for evaluation
     model.load_state_dict(best_epoch_state)
@@ -381,28 +574,38 @@ def train_model(lr, hidden_channels, num_epochs, data, targets):
         ethnicity_pred = out['ethnicity'].argmax(dim=1)
         religion_pred = out['religion'].argmax(dim=1)
         
-        # Calculate accuracy across all target combinations
+        # Calculate distribution-based accuracy across all tasks
         net_accuracy = 0
         final_task_accuracies = {}
+        
         for i in range(len(targets)):
             # Get predictions for the current target combination (e.g., hhcomp+religion or hhcomp+ethnicity)
             pred_1 = out[targets[i][0][0]].argmax(dim=1)  # First attribute prediction (e.g., household composition)
             pred_2 = out[targets[i][0][1]].argmax(dim=1)  # Second attribute prediction (e.g., religion or ethnicity)
             
-            # Calculate joint accuracy - only counts as correct if BOTH predictions match the targets
-            # This is a stricter metric than individual accuracy for each attribute
-            task_net_accuracy = ((pred_1 == targets[i][1][0]) & (pred_2 == targets[i][1][1])).sum().item() / num_households
+            # Get the corresponding actual cross-table
+            if i == 0:  # hhcomp-religion
+                actual_crosstable = hhcomp_by_religion_df
+            else:  # hhcomp-ethnicity
+                actual_crosstable = hhcomp_by_ethnicity_df
+            
+            # Calculate distribution-based accuracy (R²)
+            task_distribution_accuracy = calculate_distribution_task_accuracy(
+                pred_1, pred_2, targets[i][0], actual_crosstable
+            )
             
             # Accumulate accuracy across all target combinations
-            net_accuracy += task_net_accuracy
+            net_accuracy += task_distribution_accuracy
             task_name = '_'.join(targets[i][0])
-            final_task_accuracies[task_name] = task_net_accuracy * 100
+            final_task_accuracies[task_name] = task_distribution_accuracy * 100
         
         final_accuracy = net_accuracy / len(targets)
         
         # Print final task accuracies
+        print(f"\n=== DISTRIBUTION-BASED ACCURACY RESULTS ===")
         for task, acc in final_task_accuracies.items():
-            print(f"{task} final accuracy: {acc:.2f}%")
+            print(f"{task} distribution accuracy (R²): {acc:.2f}%")
+        print(f"Overall distribution accuracy: {final_accuracy*100:.2f}%")
         
         # Update best model info if this model performs better
         global best_model_info
@@ -455,7 +658,7 @@ for lr in learning_rates:
 
         # Print the results for the current run
         print(f"Finished training with lr={lr}, hidden_channels={hidden_channels}")
-        print(f"Final Loss: {final_loss}, Average Accuracy: {average_accuracy:.4f}, Final Accuracy: {final_accuracy:.4f}")
+        print(f"Final Loss: {final_loss}, Average Distribution Accuracy: {average_accuracy:.4f}, Final Distribution Accuracy: {final_accuracy:.4f}")
         print(f"Training time: {train_time_str}")
 
 # Calculate total training time
@@ -474,7 +677,7 @@ print("\nBest Model Information:")
 print(f"Learning Rate: {best_model_info['lr']}")
 print(f"Hidden Channels: {best_model_info['hidden_channels']}")
 print(f"Best Loss: {best_model_info['loss']:.4f}")
-print(f"Best Accuracy: {best_model_info['accuracy']:.4f}")
+print(f"Best Distribution Accuracy (R²): {best_model_info['accuracy']:.4f}")
 
 # Create output directory if it doesn't exist
 # output_dir = os.path.join(current_dir, 'outputs')
@@ -542,48 +745,10 @@ religion_actual = {}
 for rel in religion_categories:
     religion_actual[rel] = religion_df[rel].iloc[0]
 
-# ethnicity_actual = {}
-# for eth in ethnicity_categories:
-#     # Look for column that ends with the ethnicity code
-#     for col in ethnicity_df.columns:
-#         if col.endswith(eth) and 'count' in ethnicity_df.columns:
-#             ethnicity_actual[eth] = ethnicity_df[ethnicity_df[col] == 1]['count'].sum()
-#             break
-#     if eth not in ethnicity_actual:
-#         # Fallback if column structure is different
-#         ethnicity_actual[eth] = 0
-
-# religion_actual = {}
-# for rel in religion_categories:
-#     # Look for column that ends with the religion code
-#     for col in religion_df.columns:
-#         if col.endswith(rel) and 'count' in religion_df.columns:
-#             religion_actual[rel] = religion_df[religion_df[col] == 1]['count'].sum()
-#             break
-#     if rel not in religion_actual:
-#         # Fallback if column structure is different
-#         religion_actual[rel] = 0
-
-# print("============ Actual Values =============")
-# print("\nHH Composition:")
-# print(hh_comp_actual)
-# print("\nEthnicity:")
-# print(ethnicity_actual)
-# print("\nReligion:")
-# print(religion_actual)
-
 # Calculate counts of predicted categories
 hh_comp_pred = dict(Counter(hh_comp_pred_names))
 ethnicity_pred = dict(Counter(ethnicity_pred_names))
 religion_pred = dict(Counter(religion_pred_names))
-
-# print("============ Predicted Values =============")
-# print("\nHH Composition:")
-# print(hh_comp_pred)
-# print("\nEthnicity:")
-# print(ethnicity_pred)
-# print("\nReligion:")
-# print(religion_pred)
 
 # Normalize the actual distributions to match the total number of households in predictions
 # This ensures fair comparison of relative proportions
@@ -613,12 +778,6 @@ for hh in hh_compositions:
         if col_name in hhcomp_by_religion_df.columns:
             hh_by_religion_actual_reshaped.loc[hh, rel] = hhcomp_by_religion_df[col_name].iloc[0]
 
-# print("============ Actual Crosstables =============")
-# print("\nHH by Ethnicity:")
-# print(hh_by_ethnicity_actual_reshaped)
-# print("\nHH by Religion:")
-# print(hh_by_religion_actual_reshaped)
-
 # Create predicted crosstables from our predictions
 hh_by_ethnicity_pred = pd.DataFrame(0, index=hh_compositions, columns=ethnicity_categories)
 hh_by_religion_pred = pd.DataFrame(0, index=hh_compositions, columns=religion_categories)
@@ -632,30 +791,11 @@ for i in range(len(hh_comp_pred_names)):
     hh_by_ethnicity_pred.loc[hh, eth] += 1
     hh_by_religion_pred.loc[hh, rel] += 1
 
-# print("============ Predicted Crosstables =============")
-# print("\nHH by Ethnicity:")
-# print(hh_by_ethnicity_pred)
-# print("\nHH by Religion:")
-# print(hh_by_religion_pred)
-
-# Function to calculate R-squared accuracy
-def calculate_r2_accuracy(generated_counts, target_counts):
-    """
-    Simple R² measure comparing two distributions:
-    R² = 1 - (SSE / SST), with SSE = sum of squared errors
-    """
-    gen_vals = np.array(list(generated_counts.values()), dtype=float)
-    tgt_vals = np.array(list(target_counts.values()), dtype=float)
-
-    sse = np.sum((gen_vals - tgt_vals) ** 2)
-    sst = np.sum((tgt_vals - tgt_vals.mean()) ** 2)
-
-    return 1.0 - sse / sst if sst > 1e-12 else 1.0
-
 # Plotly version of individual attribute distribution plots
-def plotly_attribute_distributions(attribute_dicts, categories_dict, use_log=False, filter_zero_bars=False, max_cols=3):
+def plotly_attribute_distributions(attribute_dicts, categories_dict, use_log=False, filter_zero_bars=False, max_cols=2):
     """
     Creates Plotly subplots comparing actual vs. predicted distributions for multiple attributes.
+    Now includes a geo plot in the top right corner showing the selected area.
     
     Parameters:
     attribute_dicts - Dictionary of attribute names to (actual, predicted) count dictionaries
@@ -667,24 +807,73 @@ def plotly_attribute_distributions(attribute_dicts, categories_dict, use_log=Fal
     attrs = list(attribute_dicts.keys())
     num_plots = len(attrs)
     
-    # Dynamically determine columns and rows
-    num_cols = min(num_plots, max_cols)
-    num_rows = math.ceil(num_plots / num_cols)
+    # Add one extra column for the geo plot
+    num_cols = min(num_plots, max_cols) + 1
+    num_rows = math.ceil(num_plots / (num_cols - 1))  # Exclude geo column from calculation
     
-    # Create subplots
+    # Pre-calculate accuracy for each attribute
+    accuracy_data = {}
+    for attr_name in attrs:
+        actual_dict, predicted_dict = attribute_dicts[attr_name]
+        categories = categories_dict[attr_name]
+        
+        # Filter zero bars if requested
+        if filter_zero_bars:
+            filtered_cats = [
+                cat for cat in categories
+                if not (actual_dict.get(cat, 0) == 0 and predicted_dict.get(cat, 0) == 0)
+            ]
+            categories = filtered_cats
+        
+        # Calculate R² accuracy
+        r2 = calculate_r2_accuracy(
+            {cat: predicted_dict.get(cat, 0) for cat in categories},
+            {cat: actual_dict.get(cat, 0) for cat in categories}
+        )
+        accuracy_data[attr_name] = r2 * 100.0
+    
+    # Create subplot specifications
+    specs = []
+    for row in range(num_rows):
+        row_specs = []
+        for col in range(num_cols):
+            if row == 0 and col == num_cols - 1:  # Top right corner for geo plot
+                row_specs.append({"type": "geo"})
+            else:
+                row_specs.append({"type": "xy"})
+        specs.append(row_specs)
+    
+    # Create complete subplot titles with accuracy information
+    subplot_titles = []
+    attr_idx = 0
+    
+    for row in range(num_rows):
+        for col in range(num_cols):
+            if row == 0 and col == num_cols - 1:  # Geo plot position
+                subplot_titles.append("")  # No title for geo plot
+            elif attr_idx < len(attrs):  # Main plot positions
+                attr_name = attrs[attr_idx]
+                accuracy = accuracy_data[attr_name]
+                subplot_titles.append(f"{attr_name} - Accuracy:{accuracy:.2f}%")
+                attr_idx += 1
+            else:  # Empty positions
+                subplot_titles.append("")
+    
     fig = make_subplots(
         rows=num_rows,
         cols=num_cols,
-        subplot_titles=[f"{attr} Distribution" for attr in attrs],
+        subplot_titles=subplot_titles,
+        specs=specs,
         shared_xaxes=False,
         shared_yaxes=False,
-        horizontal_spacing=0.15,
+        horizontal_spacing=0.10,
         vertical_spacing=0.20
     )
     
+    # Add attribute distribution plots
     for idx, attr_name in enumerate(attrs):
-        row = (idx // num_cols) + 1
-        col = (idx % num_cols) + 1
+        row = (idx // (num_cols - 1)) + 1  # Exclude geo column from calculation
+        col = (idx % (num_cols - 1)) + 1   # Exclude geo column from calculation
         
         actual_dict, predicted_dict = attribute_dicts[attr_name]
         categories = categories_dict[attr_name]
@@ -705,12 +894,6 @@ def plotly_attribute_distributions(attribute_dicts, categories_dict, use_log=Fal
         if use_log:
             actual_counts = np.log1p(actual_counts)
             predicted_counts = np.log1p(predicted_counts)
-        
-        # Calculate R² accuracy
-        r2 = calculate_r2_accuracy(
-            {cat: predicted_dict.get(cat, 0) for cat in categories},
-            {cat: actual_dict.get(cat, 0) for cat in categories}
-        )
         
         # Add traces
         actual_trace = go.Bar(
@@ -733,22 +916,39 @@ def plotly_attribute_distributions(attribute_dicts, categories_dict, use_log=Fal
         
         fig.add_trace(actual_trace, row=row, col=col)
         fig.add_trace(predicted_trace, row=row, col=col)
+    
+    # Add geo plot in top right corner
+    geo_traces, geo_layout = create_geo_plot_trace(selected_area_code, current_dir)
+    
+    if geo_traces and geo_layout:
+        for trace in geo_traces:
+            fig.add_trace(trace, row=1, col=num_cols)
         
-        # Update subplot title to include R²
-        # fig.layout.annotations[idx].text = f"{attr_name} (R²={r2:.2f})"
-        fig.layout.annotations[idx].text = f"{attr_name} - Accuracy:{r2:.2f}"
+        # Update geo subplot layout
+        fig.update_geos(
+            geo_layout,
+            row=1, col=num_cols
+        )
     
     # Update layout
     fig.update_layout(
         height=300 * num_rows,
-        width=400 * num_cols,
+        width=450 * num_cols,  # Fixed width
         title_text="Individual Attributes: Actual vs. Predicted",
         showlegend=True,
         plot_bgcolor="white",
         barmode='group',
-        margin=dict(l=40, r=40, t=80, b=50)
+        margin=dict(l=40, r=40, t=80, b=50),
+        legend=dict(
+            orientation="v",
+            yanchor="top",
+            y=0.3,  # Position below geo plot
+            xanchor="center", 
+            x=0.85,  # Align with geo plot column
+            bgcolor='rgba(255,255,255,0.9)'
+        )
     )
-    
+
     fig.update_xaxes(
         tickcolor='black',
         ticks="outside",
@@ -767,9 +967,6 @@ def plotly_attribute_distributions(attribute_dicts, categories_dict, use_log=Fal
         linewidth=2
     )
     
-    # Save the plot as HTML
-    # fig.write_html(os.path.join(plots_dir, "individual_attribute_distributions.html"))
-    
     # Display the plot
     fig.show()
 
@@ -784,6 +981,7 @@ def plotly_crosstable_comparison(
 ):
     """
     Creates Plotly subplots comparing actual vs. predicted distributions for crosstables.
+    Now includes a geo plot in the top right corner showing the selected area.
     
     Parameters:
     actual_dfs - Dictionary of crosstable names to actual dataframes
@@ -795,7 +993,47 @@ def plotly_crosstable_comparison(
     """
     keys_list = list(actual_dfs.keys())
     num_plots = len(keys_list)
+    
+    # Pre-calculate accuracy for each crosstable
+    accuracy_data = {}
+    for idx, crosstable_key in enumerate(keys_list):
+        actual_df = actual_dfs[crosstable_key]
+        predicted_df = predicted_dfs[crosstable_key]
+        
+        # Flatten the dataframes to create 1D arrays for bar charts
+        actual_vals = []
+        predicted_vals = []
+        
+        for i, row_idx in enumerate(actual_df.index):
+            for j, col_idx in enumerate(actual_df.columns):
+                a_val = actual_df.iloc[i, j]
+                p_val = predicted_df.iloc[i, j]
+                
+                if not filter_zero_bars or not (a_val == 0 and p_val == 0):
+                    actual_vals.append(a_val)
+                    predicted_vals.append(p_val)
+        
+        # Calculate R² accuracy using the same method as training
+        r2_accuracy = calculate_r2_accuracy(
+            {i: predicted_vals[i] for i in range(len(predicted_vals))},
+            {i: actual_vals[i] for i in range(len(actual_vals))}
+        )
+        accuracy_data[idx] = r2_accuracy * 100.0
+    
+    # Add one extra column for the geo plot
+    total_cols = num_cols + 1
     num_rows = (num_plots + num_cols - 1) // num_cols
+    
+    # Create subplot specifications
+    specs = []
+    for row in range(num_rows):
+        row_specs = []
+        for col in range(total_cols):
+            if row == 0 and col == total_cols - 1:  # Top right corner for geo plot
+                row_specs.append({"type": "geo"})
+            else:
+                row_specs.append({"type": "xy"})
+        specs.append(row_specs)
     
     vertical_spacing = 0.4 if show_keys else 0.2
     subplot_height = 400 if show_keys else 300
@@ -806,12 +1044,35 @@ def plotly_crosstable_comparison(
     else:
         vertical_spacing = 0
     
+    # Create complete titles with accuracy information
+    all_titles = []
+    main_plot_idx = 0  # Separate counter for main plots
+    
+    for i in range(num_rows):
+        for j in range(total_cols):
+            if j < num_cols:
+                # This is a main plot column
+                if main_plot_idx < len(titles):
+                    accuracy = accuracy_data[main_plot_idx]
+                    all_titles.append(f"{titles[main_plot_idx]} - Accuracy:{accuracy:.2f}%")
+                    main_plot_idx += 1
+                else:
+                    all_titles.append("")
+            elif i == 0 and j == total_cols - 1:
+                # Geo plot title (first row, last column) - removed title
+                all_titles.append("")
+            else:
+                # Empty titles for other areas
+                all_titles.append("")
+    
     fig = make_subplots(
         rows=num_rows,
-        cols=num_cols,
-        subplot_titles=titles,
+        cols=total_cols,
+        subplot_titles=all_titles,
+        specs=specs,
         vertical_spacing=vertical_spacing,
-        horizontal_spacing=0.15
+        horizontal_spacing=0.08,
+        column_widths=[0.9] * num_cols + [0.1]  # 90% main plots, 10% geo plot
     )
     
     for idx, crosstable_key in enumerate(keys_list):
@@ -845,15 +1106,6 @@ def plotly_crosstable_comparison(
         continuous_positions = list(range(1, len(actual_vals) + 1))
         original_indices_labels = original_indices
         
-        # Calculate weighted accuracy metric
-        total_actual = np.sum(actual_vals)
-        accuracy = 0.0
-        if total_actual > 0:
-            for a_val, p_val in zip(actual_vals, predicted_vals):
-                if a_val > 0:
-                    accuracy += max(0, 1 - abs(p_val - a_val) / a_val) * (a_val / total_actual)
-        accuracy *= 100.0
-        
         # Create bar traces using continuous positions
         actual_trace = go.Bar(
             x=continuous_positions,
@@ -876,9 +1128,6 @@ def plotly_crosstable_comparison(
         fig.add_trace(actual_trace, row=row, col=col)
         fig.add_trace(predicted_trace, row=row, col=col)
         
-        # Update subplot title to include accuracy
-        fig.layout.annotations[idx].text = f"{titles[idx]} - Accuracy:{accuracy:.2f}%"
-        
         # Update x-axis to show original indices as labels at continuous positions
         fig.update_xaxes(
             ticktext=original_indices_labels,
@@ -888,21 +1137,43 @@ def plotly_crosstable_comparison(
             col=col
         )
     
-    # Update layout
+    # Add geo plot in top right corner
+    geo_traces, geo_layout = create_geo_plot_trace(selected_area_code, current_dir)
+    
+    if geo_traces and geo_layout:
+        for trace in geo_traces:
+            fig.add_trace(trace, row=1, col=total_cols)
+        
+        # Update geo subplot layout
+        fig.update_geos(
+            geo_layout,
+            row=1, col=total_cols
+        )
+    
+    # Update layout to be responsive and dynamic
     fig.update_layout(
         height=subplot_height * num_rows + 100,  # Add extra space for titles and margins
         title_text="Crosstable Comparison: Actual vs. Predicted",
         showlegend=True,
         barmode='group',
         plot_bgcolor="white",
+        autosize=True,  # Enable responsive sizing
         margin=dict(
             b=200 if show_keys else 100,
             t=100,
-            l=50,
-            r=50
+            l=40,
+            r=40
+        ),
+        legend=dict(
+            orientation="v",
+            yanchor="top",
+            y=0.3,  # Position below geo plot
+            xanchor="center", 
+            x=0.95,  # Align with geo plot column (adjusted for 90/10 layout)
+            bgcolor='rgba(255,255,255,0.9)'
         )
     )
-    
+
     fig.update_yaxes(
         tickcolor='black',
         ticks="outside",
@@ -919,9 +1190,6 @@ def plotly_crosstable_comparison(
         linewidth=2
     )
     
-    # Save the plot as HTML
-    # fig.write_html(os.path.join(plots_dir, "crosstable_comparisons.html"))
-    
     # Display the plot
     fig.show()
 
@@ -930,6 +1198,7 @@ def plotly_radar_crosstable_comparison(actual_dfs, predicted_dfs, titles):
     """
     Creates radar chart subplots comparing actual vs. predicted distributions for crosstables.
     Uses numeric indices instead of category labels and shows aggregated actual vs predicted lines.
+    Now includes a geo plot showing the selected area.
     
     Parameters:
     actual_dfs - Dictionary of crosstable names to actual dataframes
@@ -939,22 +1208,62 @@ def plotly_radar_crosstable_comparison(actual_dfs, predicted_dfs, titles):
     keys_list = list(actual_dfs.keys())
     num_plots = len(keys_list)
     
-    # Set to one column, one plot per row
-    num_cols = 1
+    # Pre-calculate accuracy for each crosstable
+    accuracy_data = {}
+    for idx, crosstable_key in enumerate(keys_list):
+        actual_df = actual_dfs[crosstable_key]
+        predicted_df = predicted_dfs[crosstable_key]
+        
+        # Flatten the dataframes to create 1D arrays
+        actual_vals = actual_df.values.flatten()
+        predicted_vals = predicted_df.values.flatten()
+        
+        # Calculate R² accuracy using the same method as training
+        r2_accuracy = calculate_r2_accuracy(
+            {i: predicted_vals[i] for i in range(len(predicted_vals))},
+            {i: actual_vals[i] for i in range(len(actual_vals))}
+        )
+        accuracy_data[idx] = r2_accuracy * 100.0
+    
+    # Set to two columns: one for radar charts, one for geo plot
+    num_cols = 2
     num_rows = num_plots
+    
+    # Create subplot specifications
+    specs = []
+    for row in range(num_rows):
+        row_specs = [{'type': 'polar'}]  # Radar chart column
+        if row == 0:  # Only add geo to first row
+            row_specs.append({'type': 'geo'})  # Geo plot column
+        else:
+            row_specs.append(None)  # Empty subplot for other rows
+        specs.append(row_specs)
+    
+    # Create complete titles with accuracy information
+    extended_titles = []
+    for i, title in enumerate(titles):
+        accuracy = accuracy_data[i]
+        extended_titles.append(f"{title} - Accuracy:{accuracy:.2f}%")
+        
+        if i == 0:  # Add geo title only for first row
+            extended_titles.append("")  # Removed geo plot title
+        else:
+            extended_titles.append("")  # Empty title for other rows
     
     # Create subplots
     fig = make_subplots(
         rows=num_rows,
         cols=num_cols,
-        subplot_titles=titles,
-        specs=[[{'type': 'polar'}] for _ in range(num_rows)],
-        vertical_spacing=0.1  # Increased vertical spacing between subplots
+        subplot_titles=extended_titles,
+        specs=specs,
+        vertical_spacing=0.1,  # Increased vertical spacing between subplots
+        horizontal_spacing=0.2,
+        column_widths=[0.7, 0.3]  # 70% radar charts, 30% geo plot
     )
     
     for idx, crosstable_key in enumerate(keys_list):
         row = idx + 1
-        col = 1
+        col = 1  # Always put radar charts in first column
         
         actual_df = actual_dfs[crosstable_key]
         predicted_df = predicted_dfs[crosstable_key]
@@ -993,14 +1302,8 @@ def plotly_radar_crosstable_comparison(actual_dfs, predicted_dfs, titles):
         predicted_vals = np.append(predicted_vals, predicted_vals[0])
         theta = theta + [theta[0]]
         
-        # Calculate accuracy
-        total_actual = np.sum(actual_vals[:-1])
-        accuracy = 0.0
-        if total_actual > 0:
-            for a_val, p_val in zip(actual_vals[:-1], predicted_vals[:-1]):
-                if a_val > 0:
-                    accuracy += max(0, 1 - abs(p_val - a_val) / a_val) * (a_val / total_actual)
-        accuracy *= 100.0
+        # Get pre-calculated accuracy
+        r2_accuracy = accuracy_data[idx]
         
         # Create traces
         actual_trace = go.Scatterpolar(
@@ -1014,32 +1317,41 @@ def plotly_radar_crosstable_comparison(actual_dfs, predicted_dfs, titles):
         predicted_trace = go.Scatterpolar(
             r=predicted_vals,
             theta=theta,
-            name=f'Predicted (Acc: {accuracy:.1f}%)' if idx == 0 else None,
+            name=f'Predicted (Acc: {r2_accuracy:.1f}%)' if idx == 0 else None,
             line=dict(color='blue', width=2),
             showlegend=idx == 0
         )
         
         fig.add_trace(actual_trace, row=row, col=col)
         fig.add_trace(predicted_trace, row=row, col=col)
-        
-        # Update subplot title to include accuracy
-        fig.layout.annotations[idx].text = f"{titles[idx]} - Accuracy:{accuracy:.2f}%"
-        fig.layout.annotations[idx].font.size = 14  # Reduced title font size
-        fig.layout.annotations[idx].y = fig.layout.annotations[idx].y + 0.02  # Move title up slightly
     
-    # Update layout with larger dimensions
+    # Add geo plot in top right (first row, second column)
+    geo_traces, geo_layout = create_geo_plot_trace(selected_area_code, current_dir)
+    
+    if geo_traces and geo_layout:
+        for trace in geo_traces:
+            fig.add_trace(trace, row=1, col=2)
+        
+        # Update geo subplot layout
+        fig.update_geos(
+            geo_layout,
+            row=1, col=2
+        )
+    
+    # Update layout with fixed dimensions
     fig.update_layout(
         height=450 * num_rows,  # Slightly increased height to accommodate title spacing
-        width=1000,
+        width=1200,  # Fixed width
         title_text="Radar Chart Comparison: Actual vs. Predicted",
         title_font_size=18,  # Main title size
         showlegend=True,
         legend=dict(
+            orientation="v",
             yanchor="top",
-            y=0.99,
-            xanchor="right",
-            x=0.99,
-            font=dict(size=12)
+            y=0.3,  # Position below geo plot
+            xanchor="center", 
+            x=0.85,  # Align with geo plot column (for 70/30 layout)
+            bgcolor='rgba(255,255,255,0.9)'
         ),
         polar=dict(
             radialaxis=dict(
@@ -1076,7 +1388,7 @@ def plotly_radar_crosstable_comparison(actual_dfs, predicted_dfs, titles):
                 )
             ),
             row=i,
-            col=1
+            col=1  # Only apply to radar chart column
         )
     
     # Display the plot
@@ -1084,13 +1396,13 @@ def plotly_radar_crosstable_comparison(actual_dfs, predicted_dfs, titles):
 
 # Create Plotly individual attribute plots
 attribute_dicts = {
-    'Household Composition': (hh_comp_actual, hh_comp_pred),
+    'Composition': (hh_comp_actual, hh_comp_pred),
     'Ethnicity': (ethnicity_actual, ethnicity_pred),
     'Religion': (religion_actual, religion_pred)
 }
 
 categories_dict = {
-    'Household Composition': hh_compositions,
+    'Composition': hh_compositions,
     'Ethnicity': ethnicity_categories,
     'Religion': religion_categories
 }
@@ -1116,75 +1428,4 @@ titles = [
 plotly_crosstable_comparison(actual_dfs, predicted_dfs, titles, show_keys=False, filter_zero_bars=True)
 
 # Create Plotly radar crosstable plots
-plotly_radar_crosstable_comparison(actual_dfs, predicted_dfs, titles)
-
-# Create glossary tables for crosstable numeric indices
-def create_crosstable_glossary(row_categories, col_categories, crosstable_name):
-    """
-    Creates a glossary mapping numeric indices to actual category labels for crosstables.
-    
-    Parameters:
-    row_categories - List of row categories (e.g., household compositions)
-    col_categories - List of column categories (e.g., ethnicity or religion)
-    crosstable_name - Name of the crosstable for the CSV filename
-    
-    Returns:
-    DataFrame with columns: Numeric_Index, Row_Category, Column_Category, Full_Label
-    """
-    glossary_data = []
-    
-    sequential_index = 1  # Start from 1 to match x_labels generation
-    for i, row_cat in enumerate(row_categories):
-        for j, col_cat in enumerate(col_categories):
-            full_label = f"{row_cat} {col_cat}"
-            
-            glossary_data.append({
-                'Sequential_Index': sequential_index,
-                # 'Row_Index': i,
-                # 'Column_Index': j,
-                # 'Row_Category': row_cat,
-                # 'Column_Category': col_cat,
-                'Full_Label': full_label
-            })
-            
-            sequential_index += 1
-    
-    glossary_df = pd.DataFrame(glossary_data)
-    
-    # Save to CSV
-    glossary_path = os.path.join(output_dir, f'glossary_{crosstable_name}.csv')
-    glossary_df.to_csv(glossary_path, index=False)
-    print(f"Glossary for {crosstable_name} saved to: {glossary_path}")
-    
-    return glossary_df
-
-# # Create glossaries for both crosstables
-# print("\n" + "="*60)
-# print("CREATING CROSSTABLE GLOSSARIES")
-# print("="*60)
-
-# # Glossary for Household Composition by Ethnicity
-# hh_ethnicity_glossary = create_crosstable_glossary(
-#     hh_compositions, 
-#     ethnicity_categories, 
-#     'HH_Composition_by_Ethnicity'
-# )
-
-# print(f"\nHousehold Composition by Ethnicity Glossary:")
-# print(f"Total combinations: {len(hh_ethnicity_glossary)}")
-# print("Sample entries:")
-# print(hh_ethnicity_glossary.head(10))
-
-# # Glossary for Household Composition by Religion
-# hh_religion_glossary = create_crosstable_glossary(
-#     hh_compositions, 
-#     religion_categories, 
-#     'HH_Composition_by_Religion'
-# )
-
-# print(f"\nHousehold Composition by Religion Glossary:")
-# print(f"Total combinations: {len(hh_religion_glossary)}")
-# print("Sample entries:")
-# print(hh_religion_glossary.head(10))
-
-# print(f"\nAll glossary files saved to: {output_dir}")
+# plotly_radar_crosstable_comparison(actual_dfs, predicted_dfs, titles)
