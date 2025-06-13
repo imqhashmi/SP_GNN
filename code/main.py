@@ -23,27 +23,67 @@ SCRIPT_OPTIONS = {
     '1': {
         'name': 'Person/Individual Generation',
         'script': 'generatedIndividuals.py',
-        'description': 'Generate synthetic individuals with demographic attributes'
+        # 'script': 'generatedIndividuals_V4.py',
+        'description': 'Generate synthetic individuals with demographic attributes',
+        'requires_area': True
     },
     '2': {
         'name': 'Household Generation', 
         'script': 'generatedHouseholds.py',
-        'description': 'Generate synthetic households with composition and characteristics'
+        # 'script': 'generatedHouseholds_V3.py',
+        'description': 'Generate synthetic households with composition and characteristics',
+        'requires_area': True
     },
+    # '3': {
+    #     'name': 'Household Assignment',
+    #     'script': 'assignHouseholds.py', 
+    #     'description': 'Assign individuals to households based on compatibility',
+    #     'requires_area': True
+    # },
     '3': {
-        'name': 'Household Assignment',
-        'script': 'assignHouseholds.py', 
-        'description': 'Assign individuals to households based on compatibility'
+        'name': 'Household Assignment HP Tuning',
+        'script': 'assignHouseholdsHPTuning.py',
+        'description': 'Hyperparameter tuning for household assignment models',
+        'requires_area': True
     },
-        # '3': {
-    #     'name': 'Household Assignment HP Tuning',
-    #     'script': 'assignHouseholdsHPTuning.py',
-    #     'description': 'Hyperparameter tuning for household assignment models'
-    # }
     '4': {
         'name': 'Create Master Glossary',
         'script': 'createGlossary.py',
-        'description': 'Combine all crosstable glossaries into a single master file'
+        'description': 'Combine all crosstable glossaries into a single master file',
+        'requires_area': True
+    },
+    '5': {
+        'name': 'Persons Convergence & Performance Plots',
+        'script': 'plotConvergencePerformance.py',
+        'description': 'Generate convergence and performance plots for individuals/persons only',
+        'requires_area': False,
+        'plot_type': 'individuals'
+    },
+    '6': {
+        'name': 'Households Convergence & Performance Plots', 
+        'script': 'plotConvergencePerformance.py',
+        'description': 'Generate convergence and performance plots for households only',
+        'requires_area': False,
+        'plot_type': 'households'
+    },
+    '7': {
+        'name': 'All Convergence & Performance Plots',
+        'script': 'plotConvergencePerformance.py',
+        'description': 'Generate convergence and performance plots for both persons and households',
+        'requires_area': False,
+        'plot_type': 'both'
+    },
+    '8': {
+        'name': 'Run Multiple Areas (Batch)',
+        'script': 'runMultipleAreas.py',
+        'description': 'Run individuals and households generation for multiple predefined areas',
+        'requires_area': False
+    },
+    '9': {
+        'name': 'Run Assignment HP Tuning (All Areas)',
+        'script': 'runAssignmentHPTuning.py',
+        'description': 'Run household assignment hyperparameter tuning for all 17 areas',
+        'requires_area': False
     }
 }
 
@@ -52,11 +92,31 @@ def display_menu():
     print("\n" + "="*60)
     print("SP_GNN - Synthetic Population Generation Using Graph Neural Network")
     print("="*60)
-    print("\nSelect the model to generate:")
-    for key, value in SCRIPT_OPTIONS.items():
-        print(f"{key}. {value['name']}")
-        # print(f"   {value['description']}")
-    print("5. Exit")
+    print("\nSelect the operation to perform:")
+    
+    # Group options by type
+    generation_options = ['1', '2', '3', '4']
+    analysis_options = ['5', '6', '7', '8', '9']
+    
+    print("\n📊 Generation & Processing:")
+    for key in generation_options:
+        if key in SCRIPT_OPTIONS:
+            value = SCRIPT_OPTIONS[key]
+            area_req = "🎯" if value.get('requires_area', True) else "🌐"
+            print(f"  {key}. {area_req} {value['name']}")
+    
+    print("\n📈 Analysis & Utilities:")
+    for key in analysis_options:
+        if key in SCRIPT_OPTIONS:
+            value = SCRIPT_OPTIONS[key]
+            area_req = "🎯" if value.get('requires_area', True) else "🌐"
+            print(f"  {key}. {area_req} {value['name']}")
+    
+    print("\n🔄 Other:")
+    print("  10. Exit")
+    
+    print(f"\n{'='*60}")
+    print("🎯 = Requires area code selection | 🌐 = Processes all areas")
     print("="*60)
 
 def select_area():
@@ -89,8 +149,8 @@ def select_area():
         except ValueError:
             print("Please enter a valid number or 'q' to quit")
 
-def run_script(script_name, area_code):
-    """Run the selected script with the specified area code."""
+def run_script(script_name, area_code=None, plot_type=None):
+    """Run the selected script with or without area code depending on requirements."""
     current_dir = os.path.dirname(os.path.abspath(__file__))
     script_path = os.path.join(current_dir, script_name)
     
@@ -100,13 +160,23 @@ def run_script(script_name, area_code):
     
     try:
         print(f"\n{'='*60}")
-        print(f"Running {script_name} with area code: {area_code}")
+        if area_code:
+            print(f"Running {script_name} with area code: {area_code}")
+        elif plot_type:
+            print(f"Running {script_name} with plot type: {plot_type}")
+        else:
+            print(f"Running {script_name}")
         print(f"{'='*60}")
         
-        # Run the script with area code as argument
-        result = subprocess.run([
-            sys.executable, script_path, '--area_code', area_code
-        ], check=True, capture_output=False)
+        # Build command based on parameters
+        cmd = [sys.executable, script_path]
+        if area_code:
+            cmd.extend(['--area_code', area_code])
+        if plot_type:
+            cmd.extend(['--plot_type', plot_type])
+        
+        # Run the script
+        result = subprocess.run(cmd, check=True, capture_output=False)
         
         print(f"\n{'='*60}")
         print(f"Successfully completed {script_name}")
@@ -126,42 +196,90 @@ def main():
     
     while True:
         display_menu()
-        choice = input("\nEnter your choice (1-5): ").strip()
+        choice = input("\nEnter your choice (1-10): ").strip()
         
-        if choice == '5':
+        if choice == '10':
             # print("Thank you for using SP_GNN. Goodbye!")
             break
         elif choice in SCRIPT_OPTIONS:
-            # Select area
-            selected_area = select_area()
-            if selected_area is None:
-                continue  # Return to main menu
-            
-            # Run the selected script
             script_info = SCRIPT_OPTIONS[choice]
-            success = run_script(script_info['script'], selected_area)
+            
+            # Check if script requires area code
+            if script_info.get('requires_area', True):
+                # Select area
+                selected_area = select_area()
+                if selected_area is None:
+                    continue  # Return to main menu
+                
+                # Run the selected script with area code
+                success = run_script(script_info['script'], selected_area)
+            else:
+                # Run the script without area code
+                print(f"\n{script_info['description']}")
+                if choice in ['5', '6', '7']:
+                    plot_type = script_info.get('plot_type', 'both')
+                    entity_type = "individuals/persons" if plot_type == 'individuals' else "households" if plot_type == 'households' else "both individuals and households"
+                    print("\nThis will:")
+                    print(f"  • Search for existing output folders for {entity_type}")
+                    print("  • Generate interactive convergence plots (loss & accuracy over epochs)")
+                    print("  • Generate performance plots (training time vs population)")
+                    print("  • Generate training progress plots (population vs time progression)")
+                    print("  • Save plots as HTML files in the outputs/ directory")
+                elif choice == '8':
+                    print("\nThis will:")
+                    print("  • Run individual generation for predefined area codes")
+                    print("  • Run household generation for predefined area codes") 
+                    print("  • Automatically generate convergence and performance plots")
+                    print("  • Process multiple areas in sequence")
+                elif choice == '9':
+                    print("\nThis will:")
+                    print("  • Run household assignment hyperparameter tuning for all 17 areas")
+                    print("  • Check for required input files (person_nodes.pt, household_nodes.pt)")
+                    print("  • Skip areas with missing input files")
+                    print("  • Generate assignment performance plots and analysis")
+                    print("  • Create detailed hyperparameter tuning results")
+                
+                # confirm = input("\nDo you want to proceed? (y/n): ").strip().lower()
+                # if confirm != 'y':
+                #     continue
+                
+                # Check if script has plot_type parameter
+                plot_type = script_info.get('plot_type')
+                success = run_script(script_info['script'], plot_type=plot_type)
             
             if success:
                 input("\nPress Enter to continue...")
             else:
                 input("\nScript execution failed. Press Enter to continue...")
         else:
-            print("Invalid choice. Please enter a number between 1 and 5.")
+            print("Invalid choice. Please enter a number between 1 and 10.")
 
 if __name__ == "__main__":
     # Support command line arguments for automated execution
     parser = argparse.ArgumentParser(description='SP_GNN Synthetic Population Generator')
-    parser.add_argument('--script', choices=['1', '2', '3', '4'], 
-                       help='Script to run (1=Individual, 2=Household, 3=Assignment, 4=Create Master Glossary)')
+    parser.add_argument('--script', choices=['1', '2', '3', '4', '5', '6', '7', '8', '9'], 
+                       help='Script to run (1=Individual, 2=Household, 3=Assignment, 4=Create Master Glossary, 5=Persons Plots, 6=Households Plots, 7=All Plots, 8=Run Multiple Areas, 9=Assignment HP Tuning All Areas)')
     parser.add_argument('--area_code', choices=ALL_OXFORD_AREAS,
-                       help='Oxford area code to use')
+                       help='Oxford area code to use (not required for scripts 4, 5, 6, 7, 8, 9)')
     
     args = parser.parse_args()
     
     # If command line arguments provided, run directly
-    if args.script and args.area_code:
+    if args.script:
         script_info = SCRIPT_OPTIONS[args.script]
-        success = run_script(script_info['script'], args.area_code)
+        
+        # Check if script requires area code
+        if script_info.get('requires_area', True):
+            if not args.area_code:
+                print(f"Error: Script '{script_info['name']}' requires an area code.")
+                print(f"Available area codes: {', '.join(ALL_OXFORD_AREAS)}")
+                sys.exit(1)
+            success = run_script(script_info['script'], args.area_code)
+        else:
+            # Script doesn't require area code
+            plot_type = script_info.get('plot_type')
+            success = run_script(script_info['script'], plot_type=plot_type)
+        
         if not success:
             sys.exit(1)
     else:

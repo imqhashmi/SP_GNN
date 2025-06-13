@@ -132,8 +132,8 @@ def create_geo_plot_trace(selected_area_code, current_dir):
         lon_min, lat_min, lon_max, lat_max = red_bounds
         
         # Reduce padding to make geo plots bigger within their allocated space
-        lat_padding = (lat_max - lat_min) * 0.1  # Reduced to 10% padding (was 30%)
-        lon_padding = (lon_max - lon_min) * 0.1  # Reduced to 10% padding (was 30%)
+        lat_padding = (lat_max - lat_min) * 0.05  # Further reduced to 5% padding for larger geo plot
+        lon_padding = (lon_max - lon_min) * 0.05  # Further reduced to 5% padding for larger geo plot
         
         geo_layout = {
             'visible': False,
@@ -154,11 +154,12 @@ def get_target_tensors(cross_table, feature_1_categories, feature_1_map, feature
     y_feature_3 = torch.zeros(num_persons, dtype=torch.long, device=device)
     
     # Populate target tensors based on the cross table and feature categories
+    # Changed order to match new glossary: age-sex combinations first, then ethnicity/religion/marital
     person_idx = 0
     for _, row in cross_table.iterrows():
-        for feature_1 in feature_1_categories:
-            for feature_2 in feature_2_categories:
-                for feature_3 in feature_3_categories:
+        for feature_2 in feature_2_categories:  # age groups
+            for feature_1 in feature_1_categories:  # sex categories
+                for feature_3 in feature_3_categories:  # ethnicity/religion/marital
                     col_name = f'{feature_1} {feature_2} {feature_3}'
                     count = int(row.get(col_name, 0))
                     for _ in range(count):
@@ -181,6 +182,9 @@ marital_df = pd.read_csv(os.path.join(current_dir, '../data/preprocessed-data/in
 ethnic_by_sex_by_age_df = pd.read_csv(os.path.join(current_dir, '../data/preprocessed-data/crosstables/EthnicityBySexByAge.csv'))
 religion_by_sex_by_age_df = pd.read_csv(os.path.join(current_dir, '../data/preprocessed-data/crosstables/ReligionbySexbyAge.csv'))
 marital_by_sex_by_age_df = pd.read_csv(os.path.join(current_dir, '../data/preprocessed-data/crosstables/MaritalbySexbyAgeModified.csv'))
+# ethnic_by_sex_by_age_df = pd.read_csv(os.path.join(current_dir, '../data/preprocessed-data/crosstables/EthnicityBySexByAge_sorted.csv'))
+# religion_by_sex_by_age_df = pd.read_csv(os.path.join(current_dir, '../data/preprocessed-data/crosstables/ReligionbySexbyAge_sorted.csv'))
+# marital_by_sex_by_age_df = pd.read_csv(os.path.join(current_dir, '../data/preprocessed-data/crosstables/MaritalbySexbyAgeModified_sorted.csv'))
 
 # Define the Oxford areas
 oxford_areas = [selected_area_code]
@@ -410,11 +414,11 @@ def create_predicted_crosstable(pred_1, pred_2, pred_3, categories_1, categories
     Returns:
         Dictionary representing the predicted cross-table
     """
-    # Create index combinations (feature_1 feature_2 feature_3)
+    # Create index combinations with new ordering (age-sex combinations first, then ethnicity/religion/marital)
     combinations = []
-    for cat1 in categories_1:
-        for cat2 in categories_2:
-            for cat3 in categories_3:
+    for cat2 in categories_2:  # age groups
+        for cat1 in categories_1:  # sex categories
+            for cat3 in categories_3:  # ethnicity/religion/marital
                 combinations.append(f'{cat1} {cat2} {cat3}')
     
     # Count occurrences of each combination in predictions
@@ -448,7 +452,7 @@ def calculate_r2_accuracy(generated_counts, target_counts):
 
 # Define the hyperparameters to tune
 # learning_rates = [0.001]
-# hidden_channel_options = [64]
+# hidden_channel_options = [64, 128, 256]
 learning_rates = [0.001, 0.0005, 0.0001]
 hidden_channel_options = [64, 128, 256]
 mlp_hidden_dim = 128
@@ -490,8 +494,8 @@ def calculate_distribution_task_accuracy(pred_1, pred_2, pred_3, target_combinat
     size_3 = category_sizes[categories_3]
     
     # Create predicted counts tensor (keep on GPU)
-    # Use a flattened approach: combination_idx = pred_1 * (size_2 * size_3) + pred_2 * size_3 + pred_3
-    combo_indices = pred_1 * (size_2 * size_3) + pred_2 * size_3 + pred_3
+    # Use a flattened approach with new ordering: combination_idx = pred_2 * (size_1 * size_3) + pred_1 * size_3 + pred_3
+    combo_indices = pred_2 * (size_1 * size_3) + pred_1 * size_3 + pred_3
     total_combinations = size_1 * size_2 * size_3
     
     # Count occurrences efficiently on GPU
@@ -514,12 +518,13 @@ def calculate_distribution_task_accuracy(pred_1, pred_2, pred_3, target_combinat
         cats_2 = category_map[categories_2] 
         cats_3 = category_map[categories_3]
         
-        for i1, cat1 in enumerate(cats_1):
-            for i2, cat2 in enumerate(cats_2):
-                for i3, cat3 in enumerate(cats_3):
+        # Changed order to match new glossary: age-sex combinations first, then ethnicity/religion/marital
+        for i2, cat2 in enumerate(cats_2):  # age groups
+            for i1, cat1 in enumerate(cats_1):  # sex categories
+                for i3, cat3 in enumerate(cats_3):  # ethnicity/religion/marital
                     original_col = f'{cat1} {cat2} {cat3}'
                     if original_col in actual_crosstable.columns:
-                        combo_idx = i1 * (size_2 * size_3) + i2 * size_3 + i3
+                        combo_idx = i2 * (size_1 * size_3) + i1 * size_3 + i3
                         actual_counts_tensor[combo_idx] = actual_crosstable[original_col].iloc[0]
         
         # Cache the result to avoid recomputation
@@ -562,9 +567,21 @@ def train_model(lr, hidden_channels, num_epochs, data, targets):
     
     # Storage for tracking metrics across epochs
     epoch_accuracies = []
+    convergence_data = {
+        'epochs': [],
+        'losses': [],
+        'accuracies': [],
+        'cumulative_time_seconds': [],
+        'epoch_time_seconds': []
+    }
+    
+    # Start timing for epoch-wise tracking
+    training_start_time = time.time()
 
     # Training loop
     for epoch in range(num_epochs):
+        epoch_start_time = time.time()
+        
         model.train()  # Set model to training mode
         optimizer.zero_grad()  # Clear gradients
 
@@ -626,8 +643,25 @@ def train_model(lr, hidden_channels, num_epochs, data, targets):
         loss.backward()
         optimizer.step()
         
+        # Calculate epoch timing
+        epoch_end_time = time.time()
+        epoch_duration = epoch_end_time - epoch_start_time
+        cumulative_time = epoch_end_time - training_start_time
+        
         # Store loss data for each epoch
         loss_data[epoch] = loss.item()
+        
+        # Store convergence data
+        convergence_data['epochs'].append(epoch + 1)
+        convergence_data['losses'].append(loss.item())
+        convergence_data['epoch_time_seconds'].append(epoch_duration)
+        convergence_data['cumulative_time_seconds'].append(cumulative_time)
+        
+        # Store accuracy data (only when calculated)
+        if (epoch + 1) % 100 == 0:
+            convergence_data['accuracies'].append(avg_epoch_accuracy)
+        else:
+            convergence_data['accuracies'].append(None)  # Placeholder for missing accuracy
 
     # Calculate average accuracy across all epochs
     average_accuracy = sum(epoch_accuracies) / len(epoch_accuracies)
@@ -696,11 +730,12 @@ def train_model(lr, hidden_channels, num_epochs, data, targets):
                 'accuracy': final_accuracy,
                 'predictions': (sex_pred, age_pred, ethnicity_pred, religion_pred, marital_pred),
                 'lr': lr,
-                'hidden_channels': hidden_channels
+                'hidden_channels': hidden_channels,
+                'convergence_data': convergence_data
             })
 
-        # Return the final loss, average accuracy across epochs, and final accuracies
-        return best_epoch_loss, average_accuracy, final_accuracy, (sex_pred, age_pred, ethnicity_pred, religion_pred, marital_pred)
+        # Return the final loss, average accuracy across epochs, final accuracies, and convergence data
+        return best_epoch_loss, average_accuracy, final_accuracy, (sex_pred, age_pred, ethnicity_pred, religion_pred, marital_pred), convergence_data
 
 # Run the grid search over hyperparameters
 total_start_time = time.time()
@@ -714,7 +749,7 @@ for lr in learning_rates:
         start_time = time.time()
         
         # Train the model for the current combination of hyperparameters
-        final_loss, average_accuracy, final_accuracy, predictions = train_model(lr, hidden_channels, num_epochs, data, targets)
+        final_loss, average_accuracy, final_accuracy, predictions, convergence_data = train_model(lr, hidden_channels, num_epochs, data, targets)
         
         # End timing for this combination
         end_time = time.time()
@@ -737,6 +772,16 @@ for lr in learning_rates:
             'hidden_channels': hidden_channels,
             'training_time': train_time_str
         })
+        
+        # Store performance data
+        performance_data = {
+            'area_code': selected_area_code,
+            'num_persons': num_persons,
+            'training_time_seconds': train_time,
+            'learning_rate': lr,
+            'hidden_channels': hidden_channels,
+            'final_accuracy': final_accuracy
+        }
 
         # Print the results for the current run
         print(f"Finished training with lr={lr}, hidden_channels={hidden_channels}")
@@ -781,6 +826,23 @@ best_predictions = {
 # Save hyperparameter results
 results_df.to_csv(os.path.join(output_dir, 'generateIndividuals_results.csv'), index=False)
 
+# Save convergence data from best model
+if 'convergence_data' in best_model_info:
+    convergence_df = pd.DataFrame(best_model_info['convergence_data'])
+    convergence_df.to_csv(os.path.join(output_dir, 'convergence_data.csv'), index=False)
+
+# Save performance data
+performance_data = {
+    'area_code': selected_area_code,
+    'num_persons': num_persons,
+    'training_time_seconds': total_training_time,
+    'learning_rate': best_model_info['lr'],
+    'hidden_channels': best_model_info['hidden_channels'],
+    'final_accuracy': best_model_info['accuracy']
+}
+performance_df = pd.DataFrame([performance_data])
+performance_df.to_csv(os.path.join(output_dir, 'performance_data.csv'), index=False)
+
 # Save best model configuration
 best_config = {
     'learning_rate': best_model_info['lr'],
@@ -794,19 +856,20 @@ best_config = {
 # Extract the best model's predictions for visualization
 sex_pred, age_pred, ethnicity_pred, religion_pred, marital_pred = best_model_info['predictions']
 
-# Create person tensor with attributes
-# Format: [person_id, age, religion, ethnicity, marital, sex]
-person_tensor = torch.zeros(num_persons, 6, device=device)
-person_tensor[:, 0] = torch.arange(num_persons, device=device)  # Person ID
-person_tensor[:, 1] = age_pred  # Age
-person_tensor[:, 2] = religion_pred  # Religion
-person_tensor[:, 3] = ethnicity_pred  # Ethnicity
-person_tensor[:, 4] = marital_pred  # Marital status
-person_tensor[:, 5] = sex_pred  # Sex
+# Create person tensor with attributes matching original format
+# Expected format: [age, sex, religion, ethnicity, marital] (5 columns)
+# Where religion is at index 2 and ethnicity is at index 3
+person_nodes_tensor = torch.stack([
+    age_pred,       # Column 0: age
+    sex_pred,       # Column 1: sex  
+    religion_pred,  # Column 2: religion
+    ethnicity_pred, # Column 3: ethnicity
+    marital_pred    # Column 4: marital
+], dim=1)
 
 # Save person tensor
 person_tensor_path = os.path.join(output_dir, 'person_nodes.pt')
-torch.save(person_tensor.cpu(), person_tensor_path)
+torch.save(person_nodes_tensor.cpu(), person_tensor_path)
 print(f"\nBest model outputs saved to {output_dir}")
 
 sex_pred_names = [sex_categories[i] for i in sex_pred.cpu().numpy()]
@@ -914,7 +977,7 @@ for i in range(len(sex_pred_names)):
     marital_sex_age_pred.loc[mar, col_name] += 1
 
 # Plotly version of individual attribute distribution plots
-def plotly_attribute_distributions(attribute_dicts, categories_dict, use_log=False, filter_zero_bars=False, max_cols=2):
+def plotly_attribute_distributions(attribute_dicts, categories_dict, use_log=False, filter_zero_bars=False, max_cols=2, save_path=None):
     """
     Creates Plotly subplots comparing actual vs. predicted distributions for multiple attributes.
     Now includes a geo plot in the top right corner showing the selected area.
@@ -925,6 +988,7 @@ def plotly_attribute_distributions(attribute_dicts, categories_dict, use_log=Fal
     use_log - Whether to use log scale for y-axis
     filter_zero_bars - Whether to filter out bars where both actual and predicted are zero
     max_cols - Maximum number of columns in the subplot grid
+    save_path - Optional path to save the plot as HTML
     """
     attrs = list(attribute_dicts.keys())
     num_plots = len(attrs)
@@ -954,27 +1018,27 @@ def plotly_attribute_distributions(attribute_dicts, categories_dict, use_log=Fal
         )
         accuracy_data[attr_name] = r2 * 100.0
     
-    # Create subplot specifications
+    # Create subplot specifications with geo plot spanning multiple rows
     specs = []
     for row in range(num_rows):
         row_specs = []
         for col in range(num_cols):
             if row == 0 and col == num_cols - 1:  # Top right corner for geo plot
-                row_specs.append({"type": "geo"})
+                row_specs.append({"type": "geo", "rowspan": min(num_rows, 3)})  # Span up to 3 rows
             else:
                 row_specs.append({"type": "xy"})
         specs.append(row_specs)
     
-    # Create complete subplot titles with accuracy information
+    # Create complete subplot titles with accuracy information, accounting for rowspan
     subplot_titles = []
     attr_idx = 0
     
     for row in range(num_rows):
         for col in range(num_cols):
-            if row == 0 and col == num_cols - 1:  # Geo plot position
+            if row == 0 and col == num_cols - 1:  # Geo plot position (first row)
                 subplot_titles.append("")  # No title for geo plot
-            elif row == 1 and col == num_cols - 1:  # Empty last col in 2nd row
-                subplot_titles.append("")
+            elif row > 0 and row < min(num_rows, 3) and col == num_cols - 1:  # Geo plot spanned rows
+                subplot_titles.append(None)  # None for spanned cells
             elif attr_idx < len(attrs):  # Main plot positions
                 attr_name = attrs[attr_idx]
                 accuracy = accuracy_data[attr_name]
@@ -1054,9 +1118,9 @@ def plotly_attribute_distributions(attribute_dicts, categories_dict, use_log=Fal
             row=1, col=num_cols
         )
     
-    # Update layout
+    # Update layout with increased height for larger geo plot
     fig.update_layout(
-        height=300 * num_rows,
+        height=350 * num_rows,  # Increased height to accommodate larger geo plot
         width=450 * num_cols,  # Fixed width
         title_text="Individual Attributes: Actual vs. Predicted",
         showlegend=True,
@@ -1091,8 +1155,13 @@ def plotly_attribute_distributions(attribute_dicts, categories_dict, use_log=Fal
         linewidth=2
     )
     
+    # Save the plot if save_path is provided
+    if save_path:
+        fig.write_html(save_path)
+        print(f"Individual attributes plot saved to: {save_path}")
+    
     # Display the plot
-    fig.show()
+    # fig.show()
 
 # Plotly version of crosstable plots
 def plotly_crosstable_comparison(
@@ -1101,11 +1170,12 @@ def plotly_crosstable_comparison(
     titles, 
     show_keys=False, 
     num_cols=1, 
-    filter_zero_bars=True
+    filter_zero_bars=True,
+    save_path=None
 ):
     """
     Creates Plotly subplots comparing actual vs. predicted distributions for crosstables.
-    Now includes a geo plot in the top right corner showing the selected area.
+    Now includes a geo plot positioned above the first row crosstable.
     
     Parameters:
     actual_dfs - Dictionary of crosstable names to actual dataframes
@@ -1114,6 +1184,7 @@ def plotly_crosstable_comparison(
     show_keys - Whether to show full category key combinations (True) or numeric indices (False)
     num_cols - Number of columns in the subplot grid
     filter_zero_bars - Whether to filter out bars where both actual and predicted are zero
+    save_path - Optional path to save the plot as HTML
     """
     keys_list = list(actual_dfs.keys())
     num_plots = len(keys_list)
@@ -1133,7 +1204,15 @@ def plotly_crosstable_comparison(
                 a_val = actual_df.iloc[i, j]
                 p_val = predicted_df.iloc[i, j]
                 
-                if not filter_zero_bars or not (a_val == 0 and p_val == 0):
+                # Define threshold for filtering low actual values with no prediction
+                threshold = 5
+                
+                # Filter conditions:
+                # 1. Original: both actual and predicted are 0
+                # 2. New: actual exists but is below threshold AND predicted is 0 (not predicted)
+                should_filter = (a_val == 0 and p_val == 0) or (0 < a_val < threshold and p_val == 0)
+                
+                if not filter_zero_bars or not should_filter:
                     actual_vals.append(a_val)
                     predicted_vals.append(p_val)
         
@@ -1144,63 +1223,62 @@ def plotly_crosstable_comparison(
         )
         accuracy_data[idx] = r2_accuracy * 100.0
     
-    # Add one extra column for the geo plot
-    total_cols = num_cols + 1
-    num_rows = (num_plots + num_cols - 1) // num_cols
+    # Calculate number of rows: 1 for geoplot/legend + rows for crosstables
+    crosstable_rows = (num_plots + num_cols - 1) // num_cols
+    total_rows = 1 + crosstable_rows  # 1 for geo/legend + crosstable rows
     
-    # Create subplot specifications
+    # Create subplot specifications with small top row for geo/legend and larger rows for crosstables
     specs = []
-    for row in range(num_rows):
+    
+    # First row: geo plot (left) and legend space (right)
+    geo_row_specs = []
+    for col in range(num_cols):
+        if col == 0:
+            geo_row_specs.append({"type": "geo"})  # Geo plot in first column
+        else:
+            geo_row_specs.append(None)  # Empty space for other columns
+    specs.append(geo_row_specs)
+    
+    # Remaining rows: crosstable plots
+    for row in range(crosstable_rows):
         row_specs = []
-        for col in range(total_cols):
-            if row == 0 and col == total_cols - 1:  # Top right corner for geo plot
-                row_specs.append({"type": "geo"})
-            else:
-                row_specs.append({"type": "xy"})
+        for col in range(num_cols):
+            row_specs.append({"type": "xy"})
         specs.append(row_specs)
     
-    vertical_spacing = 0.4 if show_keys else 0.2
+    # Row heights: larger for geo/legend, normal for crosstables
     subplot_height = 400 if show_keys else 300
+    geo_row_height = 0.25  # 25% of total height for geo/legend row (increased from 15%)
+    crosstable_row_height = (1.0 - geo_row_height) / crosstable_rows  # Remaining height divided by crosstable rows
     
-    if num_rows > 1:
-        max_spacing = 1.0 / (num_rows - 1) - 0.01  # subtract a small margin
-        vertical_spacing = min(vertical_spacing, max_spacing)
-    else:
-        vertical_spacing = 0
+    row_heights = [geo_row_height] + [crosstable_row_height] * crosstable_rows
     
-    # Create complete titles with accuracy information
-    all_titles = []
-    main_plot_idx = 0  # Separate counter for main plots
+    # Create titles: empty for geo row, accuracy info for crosstable rows
+    all_titles = [""] * num_cols  # Empty titles for geo row
     
-    for i in range(num_rows):
-        for j in range(total_cols):
-            if j < num_cols:
-                # This is a main plot column
-                if main_plot_idx < len(titles):
-                    accuracy = accuracy_data[main_plot_idx]
-                    all_titles.append(f"{titles[main_plot_idx]} - Accuracy:{accuracy:.2f}%")
-                    main_plot_idx += 1
-                else:
-                    all_titles.append("")
-            elif i == 0 and j == total_cols - 1:
-                # Geo plot title (first row, last column) - removed title
-                all_titles.append("")
+    # Add crosstable titles with accuracy information
+    main_plot_idx = 0
+    for i in range(crosstable_rows):
+        for j in range(num_cols):
+            if main_plot_idx < len(titles):
+                accuracy = accuracy_data[main_plot_idx]
+                all_titles.append(f"{titles[main_plot_idx]} - Accuracy:{accuracy:.2f}%")
+                main_plot_idx += 1
             else:
-                # Empty titles for other areas
                 all_titles.append("")
     
     fig = make_subplots(
-        rows=num_rows,
-        cols=total_cols,
+        rows=total_rows,
+        cols=num_cols,
         subplot_titles=all_titles,
         specs=specs,
-        vertical_spacing=vertical_spacing,
-        horizontal_spacing=0.08,
-        column_widths=[0.9] * num_cols + [0.1]  # 90% main plots, 10% geo plot
+        row_heights=row_heights,
+        vertical_spacing=0.07,  # Increased vertical spacing between crosstable subplots
+        horizontal_spacing=0.08
     )
     
     for idx, crosstable_key in enumerate(keys_list):
-        row = (idx // num_cols) + 1
+        row = (idx // num_cols) + 2  # +2 because first row (index 1) is for geo/legend
         col = (idx % num_cols) + 1
         
         actual_df = actual_dfs[crosstable_key]
@@ -1212,12 +1290,21 @@ def plotly_crosstable_comparison(
         original_indices = []  # Store original indices from glossary
         
         sequential_index = 1  # Start from 1 to match glossary numbering
-        for i, row_idx in enumerate(actual_df.index):
-            for j, col_idx in enumerate(actual_df.columns):
+        # Changed order to match new glossary: age-sex combinations first, then ethnicity/religion/marital
+        for j, col_idx in enumerate(actual_df.columns):  # age-sex combinations first
+            for i, row_idx in enumerate(actual_df.index):  # ethnicity/religion/marital second
                 a_val = actual_df.iloc[i, j]
                 p_val = predicted_df.iloc[i, j]
                 
-                if not filter_zero_bars or not (a_val == 0 and p_val == 0):
+                # Define threshold for filtering low actual values with no prediction
+                threshold = 5
+                
+                # Filter conditions:
+                # 1. Original: both actual and predicted are 0
+                # 2. New: actual exists but is below threshold AND predicted is 0 (not predicted)
+                should_filter = (a_val == 0 and p_val == 0) or (0 < a_val < threshold and p_val == 0)
+                
+                if not filter_zero_bars or not should_filter:
                     actual_vals.append(a_val)
                     predicted_vals.append(p_val)
                     original_indices.append(sequential_index)  # Keep original glossary index
@@ -1279,43 +1366,63 @@ def plotly_crosstable_comparison(
             ticktext=visible_labels,
             tickvals=visible_positions,
             tickangle=90,  # Angle the labels for better readability
+            # title_text=titles[idx],  # Add x-axis title as the crosstable name
+            row=row,
+            col=col
+        )
+        
+        # Update y-axis to show "Number of Persons" label
+        fig.update_yaxes(
+            title_text="Number of Persons",
             row=row,
             col=col
         )
     
-    # Add geo plot in top right corner
+    # Add geo plot to the first row, first column
     geo_traces, geo_layout = create_geo_plot_trace(selected_area_code, current_dir)
     
     if geo_traces and geo_layout:
         for trace in geo_traces:
-            fig.add_trace(trace, row=1, col=total_cols)
+            fig.add_trace(trace, row=1, col=1)
         
         # Update geo subplot layout
         fig.update_geos(
             geo_layout,
-            row=1, col=total_cols
+            row=1, col=1
+        )
+        
+        # Add area code label below the geo plot
+        fig.add_annotation(
+            text=f"Area Code: {selected_area_code}",
+            xref="paper", yref="paper",
+            x=0.50, y=0.8,  # Global position centered below the geo plot
+            xanchor="center", yanchor="top",
+            showarrow=False,
+            font=dict(size=12, color="black"),
+            bgcolor="rgba(255,255,255,0.8)",
+            bordercolor="black",
+            borderwidth=1
         )
     
-    # Update layout to be responsive and dynamic
+    # Update layout with proper sizing
     fig.update_layout(
-        height=subplot_height * num_rows + 100,  # Add extra space for titles and margins
-        title_text="Crosstable Comparison: Actual vs. Predicted",
+        height=200 + subplot_height * crosstable_rows,  # Small geo row + crosstable rows
         showlegend=True,
         barmode='group',
         plot_bgcolor="white",
-        autosize=True,  # Enable responsive sizing
+        autosize=True,
         margin=dict(
             b=200 if show_keys else 100,
-            t=100,
+            t=80,  # Normal top margin
             l=40,
             r=40
         ),
         legend=dict(
-            orientation="v",
+            orientation="h",  # Horizontal legend
             yanchor="top",
-            y=0.3,  # Position below geo plot
+            y=0.95,  # Position in the geo row area
             xanchor="center", 
-            x=0.95,  # Align with geo plot column (adjusted for 90/10 layout)
+            x=0.7,  # Position to the right of geo plot
             bgcolor='rgba(255,255,255,0.9)'
         )
     )
@@ -1335,6 +1442,11 @@ def plotly_crosstable_comparison(
         linecolor='black',
         linewidth=2
     )
+    
+    # Save the plot if save_path is provided
+    if save_path:
+        fig.write_html(save_path)
+        print(f"Crosstable comparison plot saved to: {save_path}")
     
     # Display the plot
     fig.show()
@@ -1358,7 +1470,8 @@ categories_dict = {
 }
 
 # Plot individual attribute distributions
-plotly_attribute_distributions(attribute_dicts, categories_dict, filter_zero_bars=True)
+individual_attributes_save_path = os.path.join(output_dir, 'individual_attributes_comparison.html')
+plotly_attribute_distributions(attribute_dicts, categories_dict, filter_zero_bars=True, save_path=individual_attributes_save_path)
 
 # Create crosstables for visualization
 # Create crosstable dictionaries for plotting
@@ -1387,10 +1500,11 @@ titles = [
 ]
 
 # Plot crosstable comparisons using the same function as in generateHouseholds.py
-plotly_crosstable_comparison(actual_dfs, predicted_dfs, titles, show_keys=False, filter_zero_bars=True)
+crosstable_save_path = os.path.join(output_dir, 'crosstable_comparison.html')
+plotly_crosstable_comparison(actual_dfs, predicted_dfs, titles, show_keys=False, filter_zero_bars=True, save_path=crosstable_save_path)
 
 # Plotly version of radar crosstable comparison
-def plotly_radar_crosstable_comparison(actual_dfs, predicted_dfs, titles):
+def plotly_radar_crosstable_comparison(actual_dfs, predicted_dfs, titles, save_path=None):
     """
     Creates radar chart subplots comparing actual vs. predicted distributions for crosstables.
     Uses numeric indices instead of category labels and shows aggregated actual vs predicted lines.
@@ -1400,6 +1514,7 @@ def plotly_radar_crosstable_comparison(actual_dfs, predicted_dfs, titles):
     actual_dfs - Dictionary of crosstable names to actual dataframes
     predicted_dfs - Dictionary of crosstable names to predicted dataframes
     titles - List of subplot titles
+    save_path - Optional path to save the plot as HTML
     """
     keys_list = list(actual_dfs.keys())
     num_plots = len(keys_list)
@@ -1410,9 +1525,9 @@ def plotly_radar_crosstable_comparison(actual_dfs, predicted_dfs, titles):
         actual_df = actual_dfs[crosstable_key]
         predicted_df = predicted_dfs[crosstable_key]
         
-        # Flatten the dataframes to create 1D arrays
-        actual_vals = actual_df.values.flatten()
-        predicted_vals = predicted_df.values.flatten()
+        # Flatten the dataframes to create 1D arrays with new ordering (age-sex first, then ethnicity/religion/marital)
+        actual_vals = actual_df.T.values.flatten()  # Transpose to get correct ordering
+        predicted_vals = predicted_df.T.values.flatten()  # Transpose to get correct ordering
         
         # Calculate R² accuracy using the same method as training
         r2_accuracy = calculate_r2_accuracy(
@@ -1464,9 +1579,9 @@ def plotly_radar_crosstable_comparison(actual_dfs, predicted_dfs, titles):
         actual_df = actual_dfs[crosstable_key]
         predicted_df = predicted_dfs[crosstable_key]
         
-        # Flatten the dataframes to create 1D arrays
-        actual_vals = actual_df.values.flatten()
-        predicted_vals = predicted_df.values.flatten()
+        # Flatten the dataframes to create 1D arrays with new ordering (age-sex first, then ethnicity/religion/marital)
+        actual_vals = actual_df.T.values.flatten()  # Transpose to get correct ordering
+        predicted_vals = predicted_df.T.values.flatten()  # Transpose to get correct ordering
         
         # Create numeric indices for the categories
         num_points = len(actual_vals)
@@ -1587,8 +1702,14 @@ def plotly_radar_crosstable_comparison(actual_dfs, predicted_dfs, titles):
             col=1  # Only apply to radar chart column
         )
     
+    # Save the plot if save_path is provided
+    if save_path:
+        fig.write_html(save_path)
+        print(f"Radar chart comparison plot saved to: {save_path}")
+    
     # Display the plot
     fig.show()
 
 # Plot radar chart comparisons
-# plotly_radar_crosstable_comparison(actual_dfs, predicted_dfs, titles)
+radar_save_path = os.path.join(output_dir, 'radar_crosstable_comparison.html')
+# plotly_radar_crosstable_comparison(actual_dfs, predicted_dfs, titles, save_path=radar_save_path)

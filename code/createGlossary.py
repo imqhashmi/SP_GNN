@@ -34,8 +34,10 @@ def create_individuals_glossary():
         glossary_data = []
         sequential_index = 1
         
-        for row_cat in row_categories:
-            for col_cat in col_categories:
+        # Changed order: iterate through col_categories first (age-sex combinations), 
+        # then row_categories (ethnicity/religion/marital)
+        for col_cat in col_categories:
+            for row_cat in row_categories:
                 full_label = f"{row_cat} {col_cat}"
                 glossary_data.append({
                     'Sequential_Index': sequential_index,
@@ -79,6 +81,8 @@ def create_households_glossary():
         glossary_data = []
         sequential_index = 1
         
+        # Changed order: iterate through row_categories first (household compositions), 
+        # then col_categories (ethnicity/religion)
         for row_cat in row_categories:
             for col_cat in col_categories:
                 full_label = f"{row_cat} {col_cat}"
