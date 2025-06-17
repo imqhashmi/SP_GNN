@@ -149,77 +149,77 @@ edge_index_file_path = os.path.join(current_dir, f"./outputs/assignment_hp_tunin
 output_dir = os.path.join(current_dir, 'outputs', f'assignment_hp_tuning_{selected_area_code}')
 os.makedirs(output_dir, exist_ok=True)
 
-# if os.path.exists(edge_index_file_path):
-#     edge_index = torch.load(edge_index_file_path)
-#     print(f"Loaded edge index from {edge_index_file_path}")
-# else:
-#     print("Creating edge index using optimized GPU operations...")
-    
-#     # Extract religion and ethnicity columns for efficient comparison
-#     person_religion = person_nodes[:, religion_col_persons]
-#     person_ethnicity = person_nodes[:, ethnicity_col_persons]
-    
-#     # Create matrices for pairwise comparison using broadcasting
-#     # Shape: (num_persons, num_persons) - True where persons have same religion/ethnicity
-#     religion_match = person_religion.unsqueeze(1) == person_religion.unsqueeze(0)
-#     ethnicity_match = person_ethnicity.unsqueeze(1) == person_ethnicity.unsqueeze(0)
-    
-#     # Combine matches: True if either religion OR ethnicity matches
-#     matches = religion_match | ethnicity_match
-    
-#     # Create upper triangular mask to avoid duplicate edges (i < j)
-#     upper_tri_mask = torch.triu(torch.ones(num_persons, num_persons, device=device, dtype=torch.bool), diagonal=1)
-    
-#     # Apply mask to only get upper triangular matches
-#     final_matches = matches & upper_tri_mask
-    
-#     # Get indices where matches occur
-#     edge_sources, edge_targets = torch.where(final_matches)
-    
-#     # Create bidirectional edges (undirected graph)
-#     edge_index = torch.stack([
-#         torch.cat([edge_sources, edge_targets]),  # Source nodes
-#         torch.cat([edge_targets, edge_sources])   # Target nodes
-#     ], dim=0)
-    
-#     # Count unique edges (divide by 2 since we count each edge twice)
-#     cnt = edge_sources.size(0)
-#     print(f"Generated {cnt} edges using GPU optimization")
-    
-#     # Move to CPU for saving
-#     edge_index_cpu = edge_index.cpu()
-#     torch.save(edge_index_cpu, edge_index_file_path)
-#     print(f"Edge index saved to {edge_index_file_path}")
-    
-#     # Keep edge_index on GPU for further processing
-#     # edge_index remains on device
-
-# Original Edge Index creation code:
-# Create the graph with more flexible edge construction (match on religion or ethnicity)
-# edge_index_file_path = os.path.join(current_dir, "edge_index.pt")
 if os.path.exists(edge_index_file_path):
     edge_index = torch.load(edge_index_file_path)
     print(f"Loaded edge index from {edge_index_file_path}")
 else:
-    edge_index = [[], []]  # Placeholder for edges
-    cnt = 0
-    for i in range(num_persons):
-        if i % 10 == 0:
-            print(i)
-        for j in range(i + 1, num_persons):  # Avoid duplicate edges by starting at i + 1
-            # Create an edge if either religion OR ethnicity matches
-            if (person_nodes[i, religion_col_persons] == person_nodes[j, religion_col_persons] or
-                person_nodes[i, ethnicity_col_persons] == person_nodes[j, ethnicity_col_persons]):
-                edge_index[0].append(i)
-                edge_index[1].append(j)
-                # Since it's an undirected graph, add both directions
-                edge_index[0].append(j)
-                edge_index[1].append(i)
-                cnt += 1
-    print(f"Generated {cnt} edges")
-    edge_index = torch.tensor(edge_index, dtype=torch.long)
-    torch.save(edge_index, edge_index_file_path)
+    print("Creating edge index using optimized GPU operations...")
+    
+    # Extract religion and ethnicity columns for efficient comparison
+    person_religion = person_nodes[:, religion_col_persons]
+    person_ethnicity = person_nodes[:, ethnicity_col_persons]
+    
+    # Create matrices for pairwise comparison using broadcasting
+    # Shape: (num_persons, num_persons) - True where persons have same religion/ethnicity
+    religion_match = person_religion.unsqueeze(1) == person_religion.unsqueeze(0)
+    ethnicity_match = person_ethnicity.unsqueeze(1) == person_ethnicity.unsqueeze(0)
+    
+    # Combine matches: True if either religion OR ethnicity matches
+    matches = religion_match | ethnicity_match
+    
+    # Create upper triangular mask to avoid duplicate edges (i < j)
+    upper_tri_mask = torch.triu(torch.ones(num_persons, num_persons, device=device, dtype=torch.bool), diagonal=1)
+    
+    # Apply mask to only get upper triangular matches
+    final_matches = matches & upper_tri_mask
+    
+    # Get indices where matches occur
+    edge_sources, edge_targets = torch.where(final_matches)
+    
+    # Create bidirectional edges (undirected graph)
+    edge_index = torch.stack([
+        torch.cat([edge_sources, edge_targets]),  # Source nodes
+        torch.cat([edge_targets, edge_sources])   # Target nodes
+    ], dim=0)
+    
+    # Count unique edges (divide by 2 since we count each edge twice)
+    cnt = edge_sources.size(0)
+    print(f"Generated {cnt} edges using GPU optimization")
+    
+    # Move to CPU for saving
+    edge_index_cpu = edge_index.cpu()
+    torch.save(edge_index_cpu, edge_index_file_path)
     print(f"Edge index saved to {edge_index_file_path}")
+    
+    # Keep edge_index on GPU for further processing
+    # edge_index remains on device
+
+# # Original Edge Index creation code:
+# # Create the graph with more flexible edge construction (match on religion or ethnicity)
+# # edge_index_file_path = os.path.join(current_dir, "edge_index.pt")
+# if os.path.exists(edge_index_file_path):
+#     edge_index = torch.load(edge_index_file_path)
+#     print(f"Loaded edge index from {edge_index_file_path}")
+# else:
+#     edge_index = [[], []]  # Placeholder for edges
+#     cnt = 0
+#     for i in range(num_persons):
+#         if i % 10 == 0:
+#             print(i)
+#         for j in range(i + 1, num_persons):  # Avoid duplicate edges by starting at i + 1
+#             # Create an edge if either religion OR ethnicity matches
+#             if (person_nodes[i, religion_col_persons] == person_nodes[j, religion_col_persons] or
+#                 person_nodes[i, ethnicity_col_persons] == person_nodes[j, ethnicity_col_persons]):
+#                 edge_index[0].append(i)
+#                 edge_index[1].append(j)
+#                 # Since it's an undirected graph, add both directions
+#                 edge_index[0].append(j)
+#                 edge_index[1].append(i)
+#                 cnt += 1
+#     print(f"Generated {cnt} edges")
+#     edge_index = torch.tensor(edge_index, dtype=torch.long)
+#     torch.save(edge_index, edge_index_file_path)
+#     print(f"Edge index saved to {edge_index_file_path}")
 
 # Move edge index to GPU (if not already there)
 if not edge_index.is_cuda and device.type == 'cuda':
