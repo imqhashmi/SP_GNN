@@ -1,0 +1,2 @@
+area_code,num_households,training_time_seconds,learning_rate,hidden_channels,final_accuracy
+E02005954,3800,193.82357096672058,0.001,64,0.996353805065155

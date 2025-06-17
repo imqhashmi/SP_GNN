@@ -1,0 +1,11 @@
+{
+    "learning_rate": 0.001,
+    "hidden_channels": 64,
+    "best_loss": 10636.345703125,
+    "total_combinations": 1,
+    "area_code": "E02005949",
+    "final_religion_compliance": 0.4144871970423114,
+    "final_ethnicity_compliance": 0.34533753252088184,
+    "final_religion_accuracy_percent": 41.44871970423114,
+    "final_ethnicity_accuracy_percent": 34.53375325208818
+}
