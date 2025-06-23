@@ -88,8 +88,17 @@ def create_convergence_plots(individuals_folders, households_folders, plot_type=
         horizontal_spacing=0.1
     )
     
-    # Color palette for different area codes
-    colors = ['blue', 'red', 'green', 'orange', 'purple', 'brown', 'pink', 'gray', 'olive', 'cyan']
+    # Extended color palette for many area codes
+    colors = [
+        '#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd',  # Blue, Orange, Green, Red, Purple
+        '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf',  # Brown, Pink, Gray, Olive, Cyan
+        '#a6cee3', '#fb9a99', '#fdbf6f', '#cab2d6', '#ff9896',  # Light Blue, Light Red, Light Orange, Light Purple, Light Pink
+        '#f0027f', '#386cb0', '#7fc97f', '#beaed4', '#fdc086',  # Magenta, Dark Blue, Light Green, Lavender, Peach
+        '#ffff99', '#bf5b17', '#666666'  # Yellow, Dark Orange, Dark Gray
+    ]
+    
+    # Unique marker shapes for every 3 areas to ensure visibility
+    marker_shapes = ['circle', 'square', 'diamond', 'triangle-up', 'triangle-down', 'star', 'x', 'cross']
     
     # Plot individuals convergence
     color_idx = 0
@@ -98,20 +107,52 @@ def create_convergence_plots(individuals_folders, households_folders, plot_type=
             convergence_data = load_convergence_data(folder_path)
             if convergence_data is not None:
                 color = colors[color_idx % len(colors)]
+                marker_shape = marker_shapes[color_idx % len(marker_shapes)]
                 
                 # Determine row for plotting
                 loss_row = 1 if plot_type in ['individuals', 'households'] else 1
                 acc_row = 1 if plot_type in ['individuals', 'households'] else 1
                 
-                # Plot loss
+                # Plot loss with markers every 10 epochs for better visibility
+                epochs = convergence_data['epochs']
+                losses = convergence_data['losses']
+                
+                # Sample data points to reduce clutter - take every 50th point for lines (very few values)
+                sample_step = 50
+                sampled_epochs = epochs[::sample_step]
+                sampled_losses = losses[::sample_step]
+                
+                # Ensure we include the last point if it's not in the sampled data
+                if len(epochs) > 0 and len(sampled_epochs) > 0:
+                    if epochs.iloc[-1] not in sampled_epochs.values:
+                        sampled_epochs = list(sampled_epochs) + [epochs.iloc[-1]]
+                        sampled_losses = list(sampled_losses) + [losses.iloc[-1]]
+                
+                # Sample every 25th epoch for markers to avoid overcrowding
+                marker_indices = list(range(0, len(epochs), 25))
+                if len(epochs) > 0 and len(epochs) - 1 not in marker_indices:  # Always include the last point
+                    marker_indices.append(len(epochs) - 1)
+                
                 fig.add_trace(
                     go.Scatter(
-                        x=convergence_data['epochs'],
-                        y=convergence_data['losses'],
-                        mode='lines',
+                        x=sampled_epochs,
+                        y=sampled_losses,
+                        mode='lines+markers',
                         name=f'Individuals {area_code}',
-                        line=dict(color=color, width=2),
-                        showlegend=True
+                        line=dict(color=color, width=3),
+                        marker=dict(
+                            symbol=marker_shape,
+                            size=8,
+                            color=color,
+                            opacity=0.8,
+                            line=dict(width=1, color='black')
+                        ),
+                        opacity=0.8,
+                        showlegend=True,
+                        hovertemplate='<b>%{fullData.name}</b><br>' +
+                                    'Epoch: %{x}<br>' +
+                                    'Loss: %{y:.4f}<br>' +
+                                    '<extra></extra>'
                     ),
                     row=loss_row, col=1
                 )
@@ -119,15 +160,45 @@ def create_convergence_plots(individuals_folders, households_folders, plot_type=
                 # Plot accuracy (filter out None values)
                 valid_accuracy_data = convergence_data.dropna(subset=['accuracies'])
                 if not valid_accuracy_data.empty:
+                    acc_epochs = valid_accuracy_data['epochs']
+                    accuracies = valid_accuracy_data['accuracies']
+                    
+                    # Sample data points to reduce clutter - take every 5th point for lines (more values)
+                    acc_sample_step = 5
+                    sampled_acc_epochs = acc_epochs[::acc_sample_step]
+                    sampled_accuracies = accuracies[::acc_sample_step]
+                    
+                    # Ensure we include the last point if it's not in the sampled data
+                    if len(acc_epochs) > 0 and len(sampled_acc_epochs) > 0:
+                        if acc_epochs.iloc[-1] not in sampled_acc_epochs.values:
+                            sampled_acc_epochs = list(sampled_acc_epochs) + [acc_epochs.iloc[-1]]
+                            sampled_accuracies = list(sampled_accuracies) + [accuracies.iloc[-1]]
+                    
+                    # Sample every 15th epoch for markers (same as households)
+                    acc_marker_indices = list(range(0, len(acc_epochs), 15))
+                    if len(acc_epochs) > 0 and len(acc_epochs) - 1 not in acc_marker_indices:
+                        acc_marker_indices.append(len(acc_epochs) - 1)
+                    
                     fig.add_trace(
                         go.Scatter(
-                            x=valid_accuracy_data['epochs'],
-                            y=valid_accuracy_data['accuracies'],
+                            x=sampled_acc_epochs,
+                            y=sampled_accuracies,
                             mode='lines+markers',
                             name=f'Individuals {area_code}',
-                            line=dict(color=color, width=2),
-                            marker=dict(size=4),
-                            showlegend=False  # Already shown in loss plot
+                            line=dict(color=color, width=3),
+                            marker=dict(
+                                symbol=marker_shape,
+                                size=8,
+                                color=color,
+                                opacity=0.8,
+                                line=dict(width=1, color='black')
+                            ),
+                            opacity=0.8,
+                            showlegend=False,  # Already shown in loss plot
+                            hovertemplate='<b>%{fullData.name}</b><br>' +
+                                        'Epoch: %{x}<br>' +
+                                        'Accuracy: %{y:.2f}%<br>' +
+                                        '<extra></extra>'
                         ),
                         row=acc_row, col=2
                     )
@@ -140,6 +211,7 @@ def create_convergence_plots(individuals_folders, households_folders, plot_type=
             convergence_data = load_convergence_data(folder_path)
             if convergence_data is not None:
                 color = colors[color_idx % len(colors)]
+                marker_shape = marker_shapes[color_idx % len(marker_shapes)]
                 
                 # Determine row for plotting
                 if plot_type == 'households':
@@ -147,15 +219,46 @@ def create_convergence_plots(individuals_folders, households_folders, plot_type=
                 elif plot_type == 'both':
                     loss_row, acc_row = 2, 2
                 
-                # Plot loss
+                # Plot loss with markers every 10 epochs for better visibility
+                epochs = convergence_data['epochs']
+                losses = convergence_data['losses']
+                
+                # Sample data points to reduce clutter - take every 50th point for lines (very few values)
+                sample_step = 50
+                sampled_epochs = epochs[::sample_step]
+                sampled_losses = losses[::sample_step]
+                
+                # Ensure we include the last point if it's not in the sampled data
+                if len(epochs) > 0 and len(sampled_epochs) > 0:
+                    if epochs.iloc[-1] not in sampled_epochs.values:
+                        sampled_epochs = list(sampled_epochs) + [epochs.iloc[-1]]
+                        sampled_losses = list(sampled_losses) + [losses.iloc[-1]]
+                
+                # Sample every 25th epoch for markers to avoid overcrowding
+                marker_indices = list(range(0, len(epochs), 25))
+                if len(epochs) > 0 and len(epochs) - 1 not in marker_indices:  # Always include the last point
+                    marker_indices.append(len(epochs) - 1)
+                
                 fig.add_trace(
                     go.Scatter(
-                        x=convergence_data['epochs'],
-                        y=convergence_data['losses'],
-                        mode='lines',
+                        x=sampled_epochs,
+                        y=sampled_losses,
+                        mode='lines+markers',
                         name=f'Households {area_code}',
-                        line=dict(color=color, width=2),
-                        showlegend=True
+                        line=dict(color=color, width=3),
+                        marker=dict(
+                            symbol=marker_shape,
+                            size=8,
+                            color=color,
+                            opacity=0.8,
+                            line=dict(width=1, color='black')
+                        ),
+                        opacity=0.8,
+                        showlegend=True,
+                        hovertemplate='<b>%{fullData.name}</b><br>' +
+                                    'Epoch: %{x}<br>' +
+                                    'Loss: %{y:.4f}<br>' +
+                                    '<extra></extra>'
                     ),
                     row=loss_row, col=1
                 )
@@ -163,15 +266,45 @@ def create_convergence_plots(individuals_folders, households_folders, plot_type=
                 # Plot accuracy (filter out None values)
                 valid_accuracy_data = convergence_data.dropna(subset=['accuracies'])
                 if not valid_accuracy_data.empty:
+                    acc_epochs = valid_accuracy_data['epochs']
+                    accuracies = valid_accuracy_data['accuracies']
+                    
+                    # Sample data points to reduce clutter - take every 5th point for lines (more values)
+                    acc_sample_step = 5
+                    sampled_acc_epochs = acc_epochs[::acc_sample_step]
+                    sampled_accuracies = accuracies[::acc_sample_step]
+                    
+                    # Ensure we include the last point if it's not in the sampled data
+                    if len(acc_epochs) > 0 and len(sampled_acc_epochs) > 0:
+                        if acc_epochs.iloc[-1] not in sampled_acc_epochs.values:
+                            sampled_acc_epochs = list(sampled_acc_epochs) + [acc_epochs.iloc[-1]]
+                            sampled_accuracies = list(sampled_accuracies) + [accuracies.iloc[-1]]
+                    
+                    # Sample every 15th epoch for markers (same as households)
+                    acc_marker_indices = list(range(0, len(acc_epochs), 15))
+                    if len(acc_epochs) > 0 and len(acc_epochs) - 1 not in acc_marker_indices:
+                        acc_marker_indices.append(len(acc_epochs) - 1)
+                    
                     fig.add_trace(
                         go.Scatter(
-                            x=valid_accuracy_data['epochs'],
-                            y=valid_accuracy_data['accuracies'],
+                            x=sampled_acc_epochs,
+                            y=sampled_accuracies,
                             mode='lines+markers',
                             name=f'Households {area_code}',
-                            line=dict(color=color, width=2),
-                            marker=dict(size=4),
-                            showlegend=False  # Already shown in loss plot
+                            line=dict(color=color, width=3),
+                            marker=dict(
+                                symbol=marker_shape,
+                                size=8,
+                                color=color,
+                                opacity=0.8,
+                                line=dict(width=1, color='black')
+                            ),
+                            opacity=0.8,
+                            showlegend=False,  # Already shown in loss plot
+                            hovertemplate='<b>%{fullData.name}</b><br>' +
+                                        'Epoch: %{x}<br>' +
+                                        'Accuracy: %{y:.2f}%<br>' +
+                                        '<extra></extra>'
                         ),
                         row=acc_row, col=2
                     )
@@ -182,33 +315,132 @@ def create_convergence_plots(individuals_folders, households_folders, plot_type=
     fig.update_xaxes(title_text="Epoch", row=1, col=1)
     fig.update_xaxes(title_text="Epoch", row=1, col=2)
     fig.update_yaxes(title_text="Training Loss", row=1, col=1)
-    fig.update_yaxes(title_text="Accuracy", row=1, col=2)
+    fig.update_yaxes(title_text="Accuracy (%)", row=1, col=2)
     
     if plot_type == 'both':
         fig.update_xaxes(title_text="Epoch", row=2, col=1)
         fig.update_xaxes(title_text="Epoch", row=2, col=2)
         fig.update_yaxes(title_text="Training Loss", row=2, col=1)
-        fig.update_yaxes(title_text="Accuracy", row=2, col=2)
+        fig.update_yaxes(title_text="Accuracy (%)", row=2, col=2)
     
     # Update layout based on plot type
-    height = 600 if plot_type in ['individuals', 'households'] else 1000
+    height = 700 if plot_type in ['individuals', 'households'] else 1200
     title_suffix = plot_type.title() if plot_type != 'both' else 'All Areas'
+    
+    # Calculate number of legend items for better layout
+    total_areas = len(individuals_folders) + len(households_folders)
+    legend_cols = min(3, max(1, total_areas // 8))  # Adjust columns based on number of areas
     
     fig.update_layout(
         height=height,
-        width=1800,
-        title_text=f"Training Convergence Analysis - {title_suffix}",
-        title_font_size=18,
-        showlegend=True,  # Added legend back
+        width=2000,  # Increased width for better legend display
+        # title_text=f"Training Convergence Analysis - {title_suffix}",
+        title_font_size=20,
+        showlegend=True,
         legend=dict(
             orientation="v",
             yanchor="top",
             y=1,
             xanchor="left",
-            x=1.02
+            x=1.02,
+            font=dict(size=10),  # Smaller font for more items
+            bgcolor='rgba(255,255,255,0.8)',  # Semi-transparent background
+            bordercolor='black',
+            borderwidth=1
         ),
-        margin=dict(l=80, r=200, t=100, b=80)  # Increased right margin for legend
+        margin=dict(l=80, r=250, t=100, b=80),  # Increased right margin for legend
+        plot_bgcolor='white',  # White background for better visibility
+        paper_bgcolor='white'
     )
+    
+    # Style the axes for better visibility - simplified for all plots
+    fig.update_xaxes(
+        showgrid=False,
+        zeroline=False,
+        showline=True,
+        linewidth=1,
+        linecolor='black'
+    )
+    
+    fig.update_yaxes(
+        showgrid=False,
+        zeroline=False,
+        showline=True,
+        linewidth=1,
+        linecolor='black'
+    )
+    
+    # Remove extra grid lines and simplify axis styling for accuracy plots
+    if plot_type == 'both':
+        # Accuracy plots (right column) - cleaner styling
+        fig.update_xaxes(
+            showgrid=False,
+            zeroline=False,
+            showline=True,
+            linewidth=1,
+            linecolor='black',
+            row=1, col=2
+        )
+        fig.update_xaxes(
+            showgrid=False,
+            zeroline=False,
+            showline=True,
+            linewidth=1,
+            linecolor='black',
+            row=2, col=2
+        )
+        fig.update_yaxes(
+            showgrid=False,
+            zeroline=False,
+            showline=True,
+            linewidth=1,
+            linecolor='black',
+            row=1, col=2
+        )
+        fig.update_yaxes(
+            showgrid=False,
+            zeroline=False,
+            showline=True,
+            linewidth=1,
+            linecolor='black',
+            row=2, col=2
+        )
+    elif plot_type == 'individuals':
+        # Accuracy plot (right column) - cleaner styling
+        fig.update_xaxes(
+            showgrid=False,
+            zeroline=False,
+            showline=True,
+            linewidth=1,
+            linecolor='black',
+            row=1, col=2
+        )
+        fig.update_yaxes(
+            showgrid=False,
+            zeroline=False,
+            showline=True,
+            linewidth=1,
+            linecolor='black',
+            row=1, col=2
+        )
+    elif plot_type == 'households':
+        # Accuracy plot (right column) - cleaner styling
+        fig.update_xaxes(
+            showgrid=False,
+            zeroline=False,
+            showline=True,
+            linewidth=1,
+            linecolor='black',
+            row=1, col=2
+        )
+        fig.update_yaxes(
+            showgrid=False,
+            zeroline=False,
+            showline=True,
+            linewidth=1,
+            linecolor='black',
+            row=1, col=2
+        )
     
     return fig
 
@@ -736,15 +968,15 @@ def main():
         # print(f"Performance plots saved to: {performance_plot_path}")
     
     # Create training progress plots
-    if individuals_folders or households_folders:
-        print(f"\nCreating training progress plots for {args.plot_type}...")
-        training_progress_fig = create_training_progress_plots(individuals_folders, households_folders, args.plot_type)
-        training_progress_fig.show()
+    # if individuals_folders or households_folders:
+    #     print(f"\nCreating training progress plots for {args.plot_type}...")
+    #     training_progress_fig = create_training_progress_plots(individuals_folders, households_folders, args.plot_type)
+    #     training_progress_fig.show()
         
-        # Save training progress plot
-        training_progress_plot_path = os.path.join(current_dir, args.output_dir, f'training_progress_plots{plot_type_suffix}.html')
-        training_progress_fig.write_html(training_progress_plot_path)
-        print(f"Training progress plots saved to: {training_progress_plot_path}")
+    #     # Save training progress plot
+    #     training_progress_plot_path = os.path.join(current_dir, args.output_dir, f'training_progress_plots{plot_type_suffix}.html')
+    #     training_progress_fig.write_html(training_progress_plot_path)
+    #     print(f"Training progress plots saved to: {training_progress_plot_path}")
     
     # Create summary statistics
     print("\nSummary Statistics:")
