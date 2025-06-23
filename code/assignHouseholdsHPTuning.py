@@ -10,6 +10,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import time
 from datetime import timedelta
+import gc
 
 # Add argument parser for command line parameters
 def parse_arguments():
@@ -17,6 +18,80 @@ def parse_arguments():
     parser.add_argument('--area_code', type=str, required=True,
                        help='Oxford area code to process (e.g., E02005924)')
     return parser.parse_args()
+
+# GPU Memory Management Functions
+def print_gpu_memory_info(device, message=""):
+    """Print current GPU memory usage"""
+    if torch.cuda.is_available():
+        allocated = torch.cuda.memory_allocated(device) / 1024**3
+        reserved = torch.cuda.memory_reserved(device) / 1024**3
+        total = torch.cuda.get_device_properties(device).total_memory / 1024**3
+        print(f"GPU Memory {message}: Allocated: {allocated:.2f}GB, Reserved: {reserved:.2f}GB, Total: {total:.2f}GB")
+
+def clear_gpu_memory():
+    """Comprehensive GPU memory cleanup"""
+    if torch.cuda.is_available():
+        # Clear PyTorch cache
+        torch.cuda.empty_cache()
+        
+        # Force garbage collection
+        gc.collect()
+        
+        # Reset peak memory stats
+        torch.cuda.reset_peak_memory_stats()
+        
+        print("GPU memory cleared and reset")
+
+def safe_delete_tensor(tensor):
+    """Safely delete a tensor and free GPU memory"""
+    if tensor is not None:
+        if hasattr(tensor, 'cpu'):
+            tensor = tensor.cpu()
+        del tensor
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
+def safe_delete_model(model):
+    """Safely delete a model and free GPU memory"""
+    if model is not None:
+        # Move model to CPU first to free GPU memory
+        if hasattr(model, 'cpu'):
+            model = model.cpu()
+        del model
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
+def monitor_memory_usage(device, message="", threshold_gb=8.0):
+    """Monitor GPU memory usage and warn if approaching limit"""
+    if torch.cuda.is_available():
+        allocated = torch.cuda.memory_allocated(device) / 1024**3
+        reserved = torch.cuda.memory_reserved(device) / 1024**3
+        total = torch.cuda.get_device_properties(device).total_memory / 1024**3
+        
+        print(f"GPU Memory {message}: Allocated: {allocated:.2f}GB, Reserved: {reserved:.2f}GB, Total: {total:.2f}GB")
+        
+        # Warn if memory usage is high
+        if allocated > threshold_gb:
+            print(f"WARNING: High GPU memory usage detected ({allocated:.2f}GB). Consider reducing batch size or model complexity.")
+            return True
+        return False
+    return False
+
+def emergency_memory_cleanup():
+    """Emergency memory cleanup when memory is critically low"""
+    print("Performing emergency memory cleanup...")
+    
+    # Force garbage collection multiple times
+    for i in range(3):
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+    
+    # Reset peak memory stats
+    if torch.cuda.is_available():
+        torch.cuda.reset_peak_memory_stats()
+    
+    print("Emergency memory cleanup completed")
 
 # Parse command line arguments
 args = parse_arguments()
@@ -33,6 +108,7 @@ print(f"Using device: {device}")
 if torch.cuda.is_available():
     print(f"CUDA device: {torch.cuda.get_device_name(0)}")
     print(f"CUDA memory: {torch.cuda.get_device_properties(0).total_memory / 1024**3:.1f} GB")
+    monitor_memory_usage(device, "at startup")
 
 # Step 1: Load the tensors and household size data
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -155,71 +231,57 @@ if os.path.exists(edge_index_file_path):
 else:
     print("Creating edge index using optimized GPU operations...")
     
-    # Extract religion and ethnicity columns for efficient comparison
-    person_religion = person_nodes[:, religion_col_persons]
-    person_ethnicity = person_nodes[:, ethnicity_col_persons]
-    
-    # Create matrices for pairwise comparison using broadcasting
-    # Shape: (num_persons, num_persons) - True where persons have same religion/ethnicity
-    religion_match = person_religion.unsqueeze(1) == person_religion.unsqueeze(0)
-    ethnicity_match = person_ethnicity.unsqueeze(1) == person_ethnicity.unsqueeze(0)
-    
-    # Combine matches: True if either religion OR ethnicity matches
-    matches = religion_match | ethnicity_match
-    
-    # Create upper triangular mask to avoid duplicate edges (i < j)
-    upper_tri_mask = torch.triu(torch.ones(num_persons, num_persons, device=device, dtype=torch.bool), diagonal=1)
-    
-    # Apply mask to only get upper triangular matches
-    final_matches = matches & upper_tri_mask
-    
-    # Get indices where matches occur
-    edge_sources, edge_targets = torch.where(final_matches)
-    
-    # Create bidirectional edges (undirected graph)
-    edge_index = torch.stack([
-        torch.cat([edge_sources, edge_targets]),  # Source nodes
-        torch.cat([edge_targets, edge_sources])   # Target nodes
-    ], dim=0)
-    
-    # Count unique edges (divide by 2 since we count each edge twice)
-    cnt = edge_sources.size(0)
-    print(f"Generated {cnt} edges using GPU optimization")
-    
-    # Move to CPU for saving
-    edge_index_cpu = edge_index.cpu()
-    torch.save(edge_index_cpu, edge_index_file_path)
-    print(f"Edge index saved to {edge_index_file_path}")
-    
-    # Keep edge_index on GPU for further processing
-    # edge_index remains on device
-
-# # Original Edge Index creation code:
-# # Create the graph with more flexible edge construction (match on religion or ethnicity)
-# # edge_index_file_path = os.path.join(current_dir, "edge_index.pt")
-# if os.path.exists(edge_index_file_path):
-#     edge_index = torch.load(edge_index_file_path)
-#     print(f"Loaded edge index from {edge_index_file_path}")
-# else:
-#     edge_index = [[], []]  # Placeholder for edges
-#     cnt = 0
-#     for i in range(num_persons):
-#         if i % 10 == 0:
-#             print(i)
-#         for j in range(i + 1, num_persons):  # Avoid duplicate edges by starting at i + 1
-#             # Create an edge if either religion OR ethnicity matches
-#             if (person_nodes[i, religion_col_persons] == person_nodes[j, religion_col_persons] or
-#                 person_nodes[i, ethnicity_col_persons] == person_nodes[j, ethnicity_col_persons]):
-#                 edge_index[0].append(i)
-#                 edge_index[1].append(j)
-#                 # Since it's an undirected graph, add both directions
-#                 edge_index[0].append(j)
-#                 edge_index[1].append(i)
-#                 cnt += 1
-#     print(f"Generated {cnt} edges")
-#     edge_index = torch.tensor(edge_index, dtype=torch.long)
-#     torch.save(edge_index, edge_index_file_path)
-#     print(f"Edge index saved to {edge_index_file_path}")
+    # Use context manager for memory optimization during edge creation
+    with torch.no_grad():  # Disable gradient computation for memory efficiency
+        # Extract religion and ethnicity columns for efficient comparison
+        person_religion = person_nodes[:, religion_col_persons]
+        person_ethnicity = person_nodes[:, ethnicity_col_persons]
+        
+        # Create matrices for pairwise comparison using broadcasting
+        # Shape: (num_persons, num_persons) - True where persons have same religion/ethnicity
+        religion_match = person_religion.unsqueeze(1) == person_religion.unsqueeze(0)
+        ethnicity_match = person_ethnicity.unsqueeze(1) == person_ethnicity.unsqueeze(0)
+        
+        # Combine matches: True if either religion OR ethnicity matches
+        matches = religion_match | ethnicity_match
+        
+        # Create upper triangular mask to avoid duplicate edges (i < j)
+        upper_tri_mask = torch.triu(torch.ones(num_persons, num_persons, device=device, dtype=torch.bool), diagonal=1)
+        
+        # Apply mask to only get upper triangular matches
+        final_matches = matches & upper_tri_mask
+        
+        # Get indices where matches occur
+        edge_sources, edge_targets = torch.where(final_matches)
+        
+        # Create bidirectional edges (undirected graph)
+        edge_index = torch.stack([
+            torch.cat([edge_sources, edge_targets]),  # Source nodes
+            torch.cat([edge_targets, edge_sources])   # Target nodes
+        ], dim=0)
+        
+        # Count unique edges (divide by 2 since we count each edge twice)
+        cnt = edge_sources.size(0)
+        print(f"Generated {cnt} edges using GPU optimization")
+        
+        # Clear intermediate tensors to free memory
+        safe_delete_tensor(person_religion)
+        safe_delete_tensor(person_ethnicity)
+        safe_delete_tensor(religion_match)
+        safe_delete_tensor(ethnicity_match)
+        safe_delete_tensor(matches)
+        safe_delete_tensor(upper_tri_mask)
+        safe_delete_tensor(final_matches)
+        safe_delete_tensor(edge_sources)
+        safe_delete_tensor(edge_targets)
+        
+        # Move to CPU for saving
+        edge_index_cpu = edge_index.cpu()
+        torch.save(edge_index_cpu, edge_index_file_path)
+        print(f"Edge index saved to {edge_index_file_path}")
+        
+        # Keep edge_index on GPU for further processing
+        # edge_index remains on device
 
 # Move edge index to GPU (if not already there)
 if not edge_index.is_cuda and device.type == 'cuda':
@@ -227,6 +289,8 @@ if not edge_index.is_cuda and device.type == 'cuda':
     print(f"Moved edge_index to {device}")
 else:
     print(f"Edge index already on {device}")
+
+monitor_memory_usage(device, "after edge index creation")
 
 # Compute loss function (as in the original code)
 def compute_loss(assignments, household_sizes, person_nodes, household_nodes, religion_loss_weight=1.0, ethnicity_loss_weight=1.0):
@@ -248,8 +312,8 @@ def compute_loss(assignments, household_sizes, person_nodes, household_nodes, re
 
 # Step 4: Hyperparameter tuning setup
 num_epochs = 100  # Number of training epochs
-learning_rates = [0.001, 0.0005, 0.0001]  # Define a range of learning rates
-hidden_dims = [64, 128]  # Define a range of hidden dimensions
+learning_rates = [0.001]  # Define a range of learning rates
+hidden_dims = [64]  # Define a range of hidden dimensions
 # learning_rates = [0.001, 0.0001, 0.0005]  # Define a range of learning rates
 # hidden_dims = [64, 128, 256]  # Define a range of hidden dimensions
 best_loss = float('inf')  # Initialize best loss to infinity
@@ -459,10 +523,17 @@ def calculate_all_accuracies(assignments, person_nodes, household_nodes, househo
 # Function to perform training with given hyperparameters
 def train_model(learning_rate, hidden_channels, return_detailed_results=False):
     print(f"    Starting training with LR={learning_rate}, Hidden={hidden_channels}")
+    
+    # Clear GPU memory before starting new training
+    clear_gpu_memory()
+    monitor_memory_usage(device, "before model creation")
+    
     model = HouseholdAssignmentGNN(in_channels=person_nodes.size(1), hidden_channels=hidden_channels, num_households=household_sizes.size(0))
     model = model.to(device)  # Move model to GPU
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
     tau = 1.0
+
+    monitor_memory_usage(device, "after model creation")
 
     # Track accuracies over epochs and convergence data
     religion_accuracies = []
@@ -543,9 +614,17 @@ def train_model(learning_rate, hidden_channels, return_detailed_results=False):
             best_epoch_loss = total_loss.item()
             best_epoch_state = model.state_dict().copy()
         
+        # Clear intermediate tensors to free memory
+        safe_delete_tensor(logits)
+        safe_delete_tensor(assignments)
+        safe_delete_tensor(final_assignments)
+        
         # Print progress every 10 epochs
         if (epoch + 1) % 10 == 0:
             print(f"\r    Epoch {epoch+1:3d}/{num_epochs} | Total Loss: {total_loss.item():.6f} | Size Loss: {size_loss.item():.6f} | Religion Loss: {religion_loss.item():.6f} | Ethnicity Loss: {ethnicity_loss.item():.6f} | Religion Acc: {accuracies['religion_compliance']*100:.2f}% | Ethnicity Acc: {accuracies['ethnicity_compliance']*100:.2f}% | Size Acc: {accuracies['relative_size_accuracy']*100:.2f}% | Overall Acc: {accuracies['overall_accuracy']*100:.2f}% | Tau: {tau:.3f}", end="", flush=True)
+            
+            # Monitor memory usage every 10 epochs
+            monitor_memory_usage(device, f"at epoch {epoch+1}")
 
     print()  # New line after training completes
     print(f"    Training completed. Final loss: {total_loss.item():.6f}")
@@ -577,10 +656,13 @@ def train_model(learning_rate, hidden_channels, return_detailed_results=False):
             'ethnicity_accuracies': ethnicity_accuracies.copy()
         })
 
-    # Clear model from GPU memory before returning
-    del model
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
+    # Clear model and intermediate tensors from GPU memory before returning
+    safe_delete_tensor(logits)
+    safe_delete_tensor(assignments)
+    safe_delete_model(model)
+    clear_gpu_memory()
+    
+    monitor_memory_usage(device, "after model cleanup")
     
     if return_detailed_results:
         return best_epoch_loss, final_assignments, epoch_numbers, religion_accuracies, ethnicity_accuracies, convergence_data, final_accuracies
@@ -590,88 +672,114 @@ def train_model(learning_rate, hidden_channels, return_detailed_results=False):
 # Perform grid search over hyperparameters
 total_start_time = time.time()
 
-for idx, lr in enumerate(learning_rates):
-    for jdx, hidden_dim in enumerate(hidden_dims):
-        combination_start_time = time.time()
-        print(f"Training with learning rate {lr} and hidden dimension {hidden_dim} ({idx*len(hidden_dims)+jdx+1}/{len(learning_rates)*len(hidden_dims)})")
-        
-        # Print GPU memory before training
-        if torch.cuda.is_available():
-            allocated_before = torch.cuda.memory_allocated(device) / 1024**3
-            print(f"GPU Memory before training: {allocated_before:.2f}GB")
-        
-        final_loss, convergence_data, final_accuracies = train_model(learning_rate=lr, hidden_channels=hidden_dim)
-        
-        combination_end_time = time.time()
-        combination_training_time = combination_end_time - combination_start_time
-        combination_training_time_str = str(timedelta(seconds=int(combination_training_time)))
-        
-        print(f"Final loss: {final_loss:.6f}")
-        print(f"Final Religion Compliance: {final_accuracies['religion_compliance']*100:.2f}%")
-        print(f"Final Ethnicity Compliance: {final_accuracies['ethnicity_compliance']*100:.2f}%")
-        print(f"Final Size Accuracy: {final_accuracies['relative_size_accuracy']*100:.2f}%")
-        print(f"Final Overall Accuracy: {final_accuracies['overall_accuracy']*100:.2f}%")
-        print(f"Training time: {combination_training_time_str}")
-        
-        # Store basic results for saving
-        hp_results.append({
-            'learning_rate': lr,
-            'hidden_channels': hidden_dim,
-            'final_loss': final_loss,
-            'religion_compliance': final_accuracies['religion_compliance'],
-            'ethnicity_compliance': final_accuracies['ethnicity_compliance'],
-            'size_accuracy': final_accuracies['relative_size_accuracy'],
-            'overall_accuracy': final_accuracies['overall_accuracy'],
-            'training_time': combination_training_time_str
-        })
-        
-        # Store detailed results
-        detailed_results.append({
-            'learning_rate': lr,
-            'hidden_channels': hidden_dim,
-            'final_loss': final_loss,
-            'religion_compliance': final_accuracies['religion_compliance'],
-            'ethnicity_compliance': final_accuracies['ethnicity_compliance'],
-            'size_accuracy': final_accuracies['size_accuracy'],
-            'relative_size_accuracy': final_accuracies['relative_size_accuracy'],
-            'overall_accuracy': final_accuracies['overall_accuracy'],
-            'religion_accuracy_percent': final_accuracies['religion_compliance'] * 100,
-            'ethnicity_accuracy_percent': final_accuracies['ethnicity_compliance'] * 100,
-            'size_accuracy_percent': final_accuracies['relative_size_accuracy'] * 100,
-            'overall_accuracy_percent': final_accuracies['overall_accuracy'] * 100,
-            'training_time_seconds': combination_training_time,
-            'training_time_str': combination_training_time_str,
-            'area_code': selected_area_code,
-            'num_persons': num_persons,
-            'num_households': household_sizes.size(0),
-            'num_epochs': num_epochs
-        })
-        
-        # Store convergence data with hyperparameter info
-        convergence_data_with_hp = convergence_data.copy()
-        convergence_data_with_hp['learning_rate'] = [lr] * len(convergence_data['epochs'])
-        convergence_data_with_hp['hidden_channels'] = [hidden_dim] * len(convergence_data['epochs'])
-        convergence_data_with_hp['combination_id'] = [f"lr_{lr}_hc_{hidden_dim}"] * len(convergence_data['epochs'])
-        convergence_results.append(convergence_data_with_hp)
-        
-        # Print GPU memory after training
-        if torch.cuda.is_available():
-            allocated_after = torch.cuda.memory_allocated(device) / 1024**3
-            print(f"GPU Memory after training: {allocated_after:.2f}GB")
+# Clear GPU memory before starting hyperparameter tuning
+clear_gpu_memory()
+monitor_memory_usage(device, "before hyperparameter tuning")
 
-        # Track the best performing hyperparameters (using overall accuracy as primary metric)
-        if final_accuracies['overall_accuracy'] > best_params.get('overall_accuracy', 0) or (final_accuracies['overall_accuracy'] == best_params.get('overall_accuracy', 0) and final_loss < best_loss):
-            best_loss = final_loss
-            best_params = {
-                'learning_rate': lr, 
-                'hidden_channels': hidden_dim,
-                'religion_compliance': final_accuracies['religion_compliance'],
-                'ethnicity_compliance': final_accuracies['ethnicity_compliance'],
-                'size_accuracy': final_accuracies['relative_size_accuracy'],
-                'overall_accuracy': final_accuracies['overall_accuracy']
-            }
-        
-        print("-" * 50)
+try:
+    for idx, lr in enumerate(learning_rates):
+        for jdx, hidden_dim in enumerate(hidden_dims):
+            try:
+                combination_start_time = time.time()
+                print(f"Training with learning rate {lr} and hidden dimension {hidden_dim} ({idx*len(hidden_dims)+jdx+1}/{len(learning_rates)*len(hidden_dims)})")
+                
+                # Print GPU memory before training
+                monitor_memory_usage(device, "before training combination")
+                
+                final_loss, convergence_data, final_accuracies = train_model(learning_rate=lr, hidden_channels=hidden_dim)
+                
+                combination_end_time = time.time()
+                combination_training_time = combination_end_time - combination_start_time
+                combination_training_time_str = str(timedelta(seconds=int(combination_training_time)))
+                
+                print(f"Final loss: {final_loss:.6f}")
+                print(f"Final Religion Compliance: {final_accuracies['religion_compliance']*100:.2f}%")
+                print(f"Final Ethnicity Compliance: {final_accuracies['ethnicity_compliance']*100:.2f}%")
+                print(f"Final Size Accuracy: {final_accuracies['relative_size_accuracy']*100:.2f}%")
+                print(f"Final Overall Accuracy: {final_accuracies['overall_accuracy']*100:.2f}%")
+                print(f"Training time: {combination_training_time_str}")
+                
+                # Store basic results for saving
+                hp_results.append({
+                    'learning_rate': lr,
+                    'hidden_channels': hidden_dim,
+                    'final_loss': final_loss,
+                    'religion_compliance': final_accuracies['religion_compliance'],
+                    'ethnicity_compliance': final_accuracies['ethnicity_compliance'],
+                    'size_accuracy': final_accuracies['relative_size_accuracy'],
+                    'overall_accuracy': final_accuracies['overall_accuracy'],
+                    'training_time': combination_training_time_str
+                })
+                
+                # Store detailed results
+                detailed_results.append({
+                    'learning_rate': lr,
+                    'hidden_channels': hidden_dim,
+                    'final_loss': final_loss,
+                    'religion_compliance': final_accuracies['religion_compliance'],
+                    'ethnicity_compliance': final_accuracies['ethnicity_compliance'],
+                    'size_accuracy': final_accuracies['size_accuracy'],
+                    'relative_size_accuracy': final_accuracies['relative_size_accuracy'],
+                    'overall_accuracy': final_accuracies['overall_accuracy'],
+                    'religion_accuracy_percent': final_accuracies['religion_compliance'] * 100,
+                    'ethnicity_accuracy_percent': final_accuracies['ethnicity_compliance'] * 100,
+                    'size_accuracy_percent': final_accuracies['relative_size_accuracy'] * 100,
+                    'overall_accuracy_percent': final_accuracies['overall_accuracy'] * 100,
+                    'training_time_seconds': combination_training_time,
+                    'training_time_str': combination_training_time_str,
+                    'area_code': selected_area_code,
+                    'num_persons': num_persons,
+                    'num_households': household_sizes.size(0),
+                    'num_epochs': num_epochs
+                })
+                
+                # Store convergence data with hyperparameter info
+                convergence_data_with_hp = convergence_data.copy()
+                convergence_data_with_hp['learning_rate'] = [lr] * len(convergence_data['epochs'])
+                convergence_data_with_hp['hidden_channels'] = [hidden_dim] * len(convergence_data['epochs'])
+                convergence_data_with_hp['combination_id'] = [f"lr_{lr}_hc_{hidden_dim}"] * len(convergence_data['epochs'])
+                convergence_results.append(convergence_data_with_hp)
+                
+                # Print GPU memory after training
+                monitor_memory_usage(device, "after training combination")
+
+                # Track the best performing hyperparameters (using overall accuracy as primary metric)
+                if final_accuracies['overall_accuracy'] > best_params.get('overall_accuracy', 0) or (final_accuracies['overall_accuracy'] == best_params.get('overall_accuracy', 0) and final_loss < best_loss):
+                    best_loss = final_loss
+                    best_params = {
+                        'learning_rate': lr, 
+                        'hidden_channels': hidden_dim,
+                        'religion_compliance': final_accuracies['religion_compliance'],
+                        'ethnicity_compliance': final_accuracies['ethnicity_compliance'],
+                        'size_accuracy': final_accuracies['relative_size_accuracy'],
+                        'overall_accuracy': final_accuracies['overall_accuracy']
+                    }
+                
+                # Clear memory between combinations
+                clear_gpu_memory()
+                print("-" * 50)
+                
+            except RuntimeError as e:
+                if "out of memory" in str(e).lower():
+                    print(f"GPU out of memory error for combination LR={lr}, Hidden={hidden_dim}")
+                    print(f"Error: {e}")
+                    print("Clearing GPU memory and continuing with next combination...")
+                    emergency_memory_cleanup()
+                    continue
+                else:
+                    print(f"Runtime error for combination LR={lr}, Hidden={hidden_dim}: {e}")
+                    clear_gpu_memory()
+                    continue
+            except Exception as e:
+                print(f"Unexpected error for combination LR={lr}, Hidden={hidden_dim}: {e}")
+                clear_gpu_memory()
+                continue
+
+except Exception as e:
+    print(f"Critical error during hyperparameter tuning: {e}")
+    print("Performing emergency cleanup...")
+    emergency_memory_cleanup()
+    raise
 
 # Calculate total training time
 total_end_time = time.time()
@@ -819,9 +927,31 @@ print(f"  Size Accuracy: {final_accuracies['relative_size_accuracy'] * 100:.2f}%
 print(f"  Overall Accuracy: {final_accuracies['overall_accuracy'] * 100:.2f}%")
 print(f"  Results and plots saved to: {output_dir}")
 
-# Final GPU cleanup
+# Comprehensive final cleanup
+print("\nPerforming final memory cleanup...")
+
+# Clear all intermediate variables
+safe_delete_tensor(final_assignments)
+safe_delete_tensor(epoch_numbers)
+safe_delete_tensor(religion_accuracies)
+safe_delete_tensor(ethnicity_accuracies)
+
+# Clear data tensors if they're no longer needed
+# Note: We keep person_nodes, household_nodes, household_sizes, and edge_index 
+# as they might be needed for future operations
+monitor_memory_usage(device, "before final cleanup")
+
+# Clear GPU cache and perform garbage collection
+clear_gpu_memory()
+
+# Print final memory status
+monitor_memory_usage(device, "after final cleanup")
+
+# Print peak memory usage if available
 if torch.cuda.is_available():
-    torch.cuda.empty_cache()
-    print("GPU cache cleared.")
+    peak_allocated = torch.cuda.max_memory_allocated(device) / 1024**3
+    peak_reserved = torch.cuda.max_memory_reserved(device) / 1024**3
+    print(f"Peak GPU Memory Usage: Allocated: {peak_allocated:.2f}GB, Reserved: {peak_reserved:.2f}GB")
 
 print("Hyperparameter tuning completed!")
+print("GPU memory has been cleared and optimized.")

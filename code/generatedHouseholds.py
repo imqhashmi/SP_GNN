@@ -298,7 +298,7 @@ class EnhancedGNNModelHousehold(torch.nn.Module):
         self.graph_norm4 = GraphNorm(hidden_channels)
         
         # Dropout layer
-        # self.dropout = torch.nn.Dropout(0.5)
+        self.dropout = torch.nn.Dropout(0.08)
         
         # MLP layers for each classification target
         self.mlp_hh = torch.nn.Sequential(
@@ -326,17 +326,17 @@ class EnhancedGNNModelHousehold(torch.nn.Module):
         x = self.conv1(x, edge_index)
         x = self.graph_norm1(x)
         x = F.relu(x)
-        # x = self.dropout(x)
+        x = self.dropout(x)
         
         x = self.conv2(x, edge_index)
         x = self.graph_norm2(x)
         x = F.relu(x)
-        # x = self.dropout(x)
+        x = self.dropout(x)
         
         x = self.conv3(x, edge_index)
         x = self.graph_norm3(x)
         x = F.relu(x)
-        # x = self.dropout(x)
+        x = self.dropout(x)
         
         # x = self.conv4(x, edge_index)
         # x = self.graph_norm4(x)
@@ -365,10 +365,10 @@ targets.append(
 )
 
 # Hyperparameter Tuning
-# learning_rates = [0.001]
-# hidden_channel_options = [64, 128, 256]
-learning_rates = [0.001, 0.0005, 0.0001]
+learning_rates = [0.001]
 hidden_channel_options = [64, 128, 256]
+# learning_rates = [0.001, 0.0005, 0.0001]
+# hidden_channel_options = [64, 128, 256]
 mlp_hidden_dim = 256
 num_epochs = 2000
 # num_epochs = 10
@@ -464,6 +464,16 @@ def calculate_distribution_task_accuracy(pred_1, pred_2, target_combination, act
         return max(0.0, r2.item())  # Ensure non-negative and convert to Python float
     else:
         return 1.0
+
+# Function to calculate RMSE
+def calculate_rmse(generated_counts, target_counts):
+    """
+    Calculate RMSE between two distributions (dicts of category: count).
+    """
+    gen_vals = np.array(list(generated_counts.values()), dtype=float)
+    tgt_vals = np.array(list(target_counts.values()), dtype=float)
+    mse = np.mean((gen_vals - tgt_vals) ** 2)
+    return np.sqrt(mse)
 
 # Function to train model
 def train_model(lr, hidden_channels, num_epochs, data, targets):
@@ -638,6 +648,46 @@ def train_model(lr, hidden_channels, num_epochs, data, targets):
             print(f"{task} distribution accuracy (R²): {acc:.2f}%")
         print(f"Overall distribution accuracy: {final_accuracy*100:.2f}%")
         
+        # Calculate RMSE
+        net_rmse = 0
+        final_task_rmses = {}
+        for i in range(len(targets)):
+            pred_1 = out[targets[i][0][0]].argmax(dim=1)
+            pred_2 = out[targets[i][0][1]].argmax(dim=1)
+            if i == 0:
+                actual_crosstable = hhcomp_by_religion_df
+            else:
+                actual_crosstable = hhcomp_by_ethnicity_df
+            # Calculate R2
+            task_distribution_accuracy = calculate_distribution_task_accuracy(
+                pred_1, pred_2, targets[i][0], actual_crosstable
+            )
+            # Calculate RMSE
+            # Build predicted and actual counts dicts
+            size_1 = len(hh_compositions if targets[i][0][0]=='hhcomp' else (ethnicity_categories if targets[i][0][0]=='ethnicity' else religion_categories))
+            size_2 = len(religion_categories if targets[i][0][1]=='religion' else ethnicity_categories)
+            pred_counts = torch.bincount(pred_1 * size_2 + pred_2, minlength=size_1*size_2).cpu().numpy()
+            # Build actual counts
+            actual_counts = []
+            cats_1 = hh_compositions if targets[i][0][0]=='hhcomp' else (ethnicity_categories if targets[i][0][0]=='ethnicity' else religion_categories)
+            cats_2 = religion_categories if targets[i][0][1]=='religion' else ethnicity_categories
+            for cat1 in cats_1:
+                for cat2 in cats_2:
+                    col = f'{cat1} {cat2}'
+                    actual_counts.append(actual_crosstable[col].iloc[0] if col in actual_crosstable.columns else 0)
+            pred_dict = {j: pred_counts[j] for j in range(len(pred_counts))}
+            actual_dict = {j: actual_counts[j] for j in range(len(actual_counts))}
+            task_rmse = calculate_rmse(pred_dict, actual_dict)
+            net_rmse += task_rmse
+            task_name = '_'.join(targets[i][0])
+            final_task_rmses[task_name] = task_rmse
+        overall_rmse = net_rmse / len(targets)
+        # Print RMSE results
+        print(f"\n=== RMSE RESULTS ===")
+        for task, rmse in final_task_rmses.items():
+            print(f"{task} RMSE: {rmse:.2f}")
+        print(f"Overall RMSE: {overall_rmse:.2f}")
+        
         # Update best model info if this model performs better
         global best_model_info
         if final_accuracy > best_model_info['accuracy'] or (final_accuracy == best_model_info['accuracy'] and best_epoch_loss < best_model_info['loss']):
@@ -648,7 +698,9 @@ def train_model(lr, hidden_channels, num_epochs, data, targets):
                 'predictions': (hh_pred, ethnicity_pred, religion_pred),
                 'lr': lr,
                 'hidden_channels': hidden_channels,
-                'convergence_data': convergence_data
+                'convergence_data': convergence_data,
+                'rmse': overall_rmse,
+                'task_rmses': final_task_rmses
             })
     
     return best_epoch_loss, average_accuracy, final_accuracy, (hh_pred, ethnicity_pred, religion_pred), convergence_data
@@ -676,9 +728,9 @@ for lr in learning_rates:
             'learning_rate': lr,
             'hidden_channels': hidden_channels,
             'final_loss': final_loss,
-            # 'average_accuracy': average_accuracy,
             'average_accuracy': final_accuracy,
-            'training_time': train_time_str
+            'training_time': train_time_str,
+            'rmse': best_model_info.get('rmse', None)
         })
         
         # Store timing results
@@ -703,6 +755,12 @@ print(f"Total training time: {total_training_time_str}")
 results_df = pd.DataFrame(results)
 print("\nHyperparameter tuning results:")
 print(results_df)
+
+# Add best_model column to results_df using best_model_info
+results_df['best_model'] = (
+    (results_df['learning_rate'] == best_model_info['lr']) &
+    (results_df['hidden_channels'] == best_model_info['hidden_channels'])
+)
 
 # Print best model information
 print("\nBest Model Information:")
@@ -742,7 +800,8 @@ performance_data = {
     'training_time_seconds': total_training_time,
     'learning_rate': best_model_info['lr'],
     'hidden_channels': best_model_info['hidden_channels'],
-    'final_accuracy': best_model_info['accuracy']
+    'final_accuracy': best_model_info['accuracy'],
+    'rmse': best_model_info.get('rmse', None)
 }
 performance_df = pd.DataFrame([performance_data])
 performance_df.to_csv(os.path.join(output_dir, 'performance_data.csv'), index=False)
@@ -1059,6 +1118,7 @@ def plotly_crosstable_comparison(
     
     # Pre-calculate accuracy for each crosstable
     accuracy_data = {}
+    rmse_data = {}
     for idx, crosstable_key in enumerate(keys_list):
         actual_df = actual_dfs[crosstable_key]
         predicted_df = predicted_dfs[crosstable_key]
@@ -1091,6 +1151,13 @@ def plotly_crosstable_comparison(
             {i: actual_vals[i] for i in range(len(actual_vals))}
         )
         accuracy_data[idx] = r2_accuracy * 100.0
+        
+        # Calculate RMSE
+        rmse_val = calculate_rmse(
+            {i: predicted_vals[i] for i in range(len(predicted_vals))},
+            {i: actual_vals[i] for i in range(len(actual_vals))}
+        )
+        rmse_data[idx] = rmse_val
     
     # Calculate number of rows: 1 for geoplot/legend + rows for crosstables
     crosstable_rows = (num_plots + num_cols - 1) // num_cols
@@ -1125,13 +1192,14 @@ def plotly_crosstable_comparison(
     # Create titles: empty for geo row, accuracy info for crosstable rows
     all_titles = [""] * num_cols  # Empty titles for geo row
     
-    # Add crosstable titles with accuracy information
+    # Add crosstable titles with accuracy and RMSE information
     main_plot_idx = 0
     for i in range(crosstable_rows):
         for j in range(num_cols):
             if main_plot_idx < len(titles):
                 accuracy = accuracy_data[main_plot_idx]
-                all_titles.append(f"{titles[main_plot_idx]} - Accuracy:{accuracy:.2f}%")
+                rmse = rmse_data[main_plot_idx]
+                all_titles.append(f"{titles[main_plot_idx]} - Acc:{accuracy:.2f}% RMSE:{rmse:.2f}")
                 main_plot_idx += 1
             else:
                 all_titles.append("")

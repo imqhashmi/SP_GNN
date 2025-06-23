@@ -325,7 +325,7 @@ class EnhancedGNNModelWithMLP(torch.nn.Module):
         self.batch_norm4 = GraphNorm(hidden_channels)
         
         # Dropout layer
-        # self.dropout = torch.nn.Dropout(0.1)
+        self.dropout = torch.nn.Dropout(0.08)
         
         # MLP for each output attribute
         self.mlp_age = torch.nn.Sequential(
@@ -450,11 +450,20 @@ def calculate_r2_accuracy(generated_counts, target_counts):
 
     return 1.0 - sse / sst if sst > 1e-12 else 1.0
 
+def calculate_rmse(generated_counts, target_counts):
+    """
+    Calculate RMSE between two distributions (dicts of category: count).
+    """
+    gen_vals = np.array(list(generated_counts.values()), dtype=float)
+    tgt_vals = np.array(list(target_counts.values()), dtype=float)
+    mse = np.mean((gen_vals - tgt_vals) ** 2)
+    return np.sqrt(mse)
+
 # Define the hyperparameters to tune
-# learning_rates = [0.001]
-# hidden_channel_options = [64, 128, 256]
-learning_rates = [0.001, 0.0005, 0.0001]
+learning_rates = [0.001]
 hidden_channel_options = [64, 128, 256]
+# learning_rates = [0.001, 0.0005, 0.0001]
+# hidden_channel_options = [64, 128, 256]
 mlp_hidden_dim = 128
 num_epochs = 2500
 # num_epochs = 10
@@ -744,26 +753,53 @@ time_results = []
 for lr in learning_rates:
     for hidden_channels in hidden_channel_options:
         print(f"Training with lr={lr}, hidden_channels={hidden_channels}")
-        
-        # Start timing for this combination
         start_time = time.time()
-        
-        # Train the model for the current combination of hyperparameters
         final_loss, average_accuracy, final_accuracy, predictions, convergence_data = train_model(lr, hidden_channels, num_epochs, data, targets)
-        
-        # End timing for this combination
         end_time = time.time()
         train_time = end_time - start_time
         train_time_str = str(timedelta(seconds=int(train_time)))
-        
-        # Store the results
+
+        # After training, evaluate RMSE for this run (not just best model)
+        # Use the same logic as in the best model evaluation
+        # Evaluate predictions for this run
+        sex_pred, age_pred, ethnicity_pred, religion_pred, marital_pred = predictions
+        net_rmse = 0
+        for i in range(len(targets)):
+            pred_1 = [sex_pred, age_pred, ethnicity_pred, religion_pred, marital_pred][['sex','age','ethnicity','religion','marital'].index(targets[i][0][0])]
+            pred_2 = [sex_pred, age_pred, ethnicity_pred, religion_pred, marital_pred][['sex','age','ethnicity','religion','marital'].index(targets[i][0][1])]
+            pred_3 = [sex_pred, age_pred, ethnicity_pred, religion_pred, marital_pred][['sex','age','ethnicity','religion','marital'].index(targets[i][0][2])]
+            if i == 0:
+                actual_crosstable = ethnic_by_sex_by_age_df
+            elif i == 1:
+                actual_crosstable = marital_by_sex_by_age_df
+            else:
+                actual_crosstable = religion_by_sex_by_age_df
+            size_1 = len(sex_categories if targets[i][0][0]=='sex' else (age_groups if targets[i][0][0]=='age' else (ethnicity_categories if targets[i][0][0]=='ethnicity' else (religion_categories if targets[i][0][0]=='religion' else marital_categories))))
+            size_2 = len(age_groups if targets[i][0][1]=='age' else (sex_categories if targets[i][0][1]=='sex' else (ethnicity_categories if targets[i][0][1]=='ethnicity' else (religion_categories if targets[i][0][1]=='religion' else marital_categories))))
+            size_3 = len(ethnicity_categories if targets[i][0][2]=='ethnicity' else (religion_categories if targets[i][0][2]=='religion' else (marital_categories if targets[i][0][2]=='marital' else (sex_categories if targets[i][0][2]=='sex' else age_groups))))
+            pred_counts = torch.bincount(pred_2 * (size_1 * size_3) + pred_1 * size_3 + pred_3, minlength=size_1*size_2*size_3).cpu().numpy()
+            actual_counts = []
+            cats_1 = sex_categories if targets[i][0][0]=='sex' else (age_groups if targets[i][0][0]=='age' else (ethnicity_categories if targets[i][0][0]=='ethnicity' else (religion_categories if targets[i][0][0]=='religion' else marital_categories)))
+            cats_2 = age_groups if targets[i][0][1]=='age' else (sex_categories if targets[i][0][1]=='sex' else (ethnicity_categories if targets[i][0][1]=='ethnicity' else (religion_categories if targets[i][0][1]=='religion' else marital_categories)))
+            cats_3 = ethnicity_categories if targets[i][0][2]=='ethnicity' else (religion_categories if targets[i][0][2]=='religion' else (marital_categories if targets[i][0][2]=='marital' else (sex_categories if targets[i][0][2]=='sex' else age_groups)))
+            for cat2 in cats_2:
+                for cat1 in cats_1:
+                    for cat3 in cats_3:
+                        col = f'{cat1} {cat2} {cat3}'
+                        actual_counts.append(actual_crosstable[col].iloc[0] if col in actual_crosstable.columns else 0)
+            pred_dict = {j: pred_counts[j] for j in range(len(pred_counts))}
+            actual_dict = {j: actual_counts[j] for j in range(len(actual_counts))}
+            task_rmse = calculate_rmse(pred_dict, actual_dict)
+            net_rmse += task_rmse
+        overall_rmse = net_rmse / len(targets)
+
         results.append({
             'learning_rate': lr,
             'hidden_channels': hidden_channels,
             'final_loss': final_loss,
-            # 'average_distribution_accuracy': average_accuracy,
             'average_accuracy': final_accuracy,
-            'training_time': train_time_str
+            'training_time': train_time_str,
+            'rmse': overall_rmse
         })
         
         # Store timing results
@@ -780,7 +816,8 @@ for lr in learning_rates:
             'training_time_seconds': train_time,
             'learning_rate': lr,
             'hidden_channels': hidden_channels,
-            'final_accuracy': final_accuracy
+            'final_accuracy': final_accuracy,
+            'rmse': best_model_info.get('rmse', None)
         }
 
         # Print the results for the current run
@@ -823,6 +860,12 @@ best_predictions = {
 }
 # np.save(os.path.join(output_dir, 'best_individual_model_predictions.npy'), best_predictions)
 
+# Add best_model column to results_df using best_model_info
+results_df['best_model'] = (
+    (results_df['learning_rate'] == best_model_info['lr']) &
+    (results_df['hidden_channels'] == best_model_info['hidden_channels'])
+)
+
 # Save hyperparameter results
 results_df.to_csv(os.path.join(output_dir, 'generateIndividuals_results.csv'), index=False)
 
@@ -832,14 +875,6 @@ if 'convergence_data' in best_model_info:
     convergence_df.to_csv(os.path.join(output_dir, 'convergence_data.csv'), index=False)
 
 # Save performance data
-performance_data = {
-    'area_code': selected_area_code,
-    'num_persons': num_persons,
-    'training_time_seconds': total_training_time,
-    'learning_rate': best_model_info['lr'],
-    'hidden_channels': best_model_info['hidden_channels'],
-    'final_accuracy': best_model_info['accuracy']
-}
 performance_df = pd.DataFrame([performance_data])
 performance_df.to_csv(os.path.join(output_dir, 'performance_data.csv'), index=False)
 
@@ -1191,6 +1226,7 @@ def plotly_crosstable_comparison(
     
     # Pre-calculate accuracy for each crosstable
     accuracy_data = {}
+    rmse_data = {}
     for idx, crosstable_key in enumerate(keys_list):
         actual_df = actual_dfs[crosstable_key]
         predicted_df = predicted_dfs[crosstable_key]
@@ -1222,6 +1258,13 @@ def plotly_crosstable_comparison(
             {i: actual_vals[i] for i in range(len(actual_vals))}
         )
         accuracy_data[idx] = r2_accuracy * 100.0
+        
+        # Calculate RMSE
+        rmse_val = calculate_rmse(
+            {i: predicted_vals[i] for i in range(len(predicted_vals))},
+            {i: actual_vals[i] for i in range(len(actual_vals))}
+        )
+        rmse_data[idx] = rmse_val
     
     # Calculate number of rows: 1 for geoplot/legend + rows for crosstables
     crosstable_rows = (num_plots + num_cols - 1) // num_cols
@@ -1256,13 +1299,14 @@ def plotly_crosstable_comparison(
     # Create titles: empty for geo row, accuracy info for crosstable rows
     all_titles = [""] * num_cols  # Empty titles for geo row
     
-    # Add crosstable titles with accuracy information
+    # Add crosstable titles with accuracy and RMSE information
     main_plot_idx = 0
     for i in range(crosstable_rows):
         for j in range(num_cols):
             if main_plot_idx < len(titles):
                 accuracy = accuracy_data[main_plot_idx]
-                all_titles.append(f"{titles[main_plot_idx]} - Accuracy:{accuracy:.2f}%")
+                rmse = rmse_data[main_plot_idx]
+                all_titles.append(f"{titles[main_plot_idx]} - Acc:{accuracy:.2f}% RMSE:{rmse:.2f}")
                 main_plot_idx += 1
             else:
                 all_titles.append("")
