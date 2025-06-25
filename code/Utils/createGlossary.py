@@ -19,7 +19,7 @@ def create_individuals_glossary():
     Creates glossaries for all individual crosstables.
     Returns dictionary of glossary DataFrames.
     """
-    # Define categories from generatedIndividuals.py
+    # Define categories from generateIndividuals.py
     age_groups = ['0_4', '5_7', '8_9', '10_14', '15', '16_17', '18_19', '20_24', '25_29', '30_34', '35_39', '40_44', '45_49', '50_54', '55_59', '60_64', '65_69', '70_74', '75_79', '80_84', '85+']
     sex_categories = ['M', 'F']
     ethnicity_categories = ['W1', 'W2', 'W3', 'W4', 'M1', 'M2', 'M3', 'M4', 'A1', 'A2', 'A3', 'A4', 'A5', 'B1', 'B2', 'B3', 'O1', 'O2']
@@ -71,7 +71,7 @@ def create_households_glossary():
     Creates glossaries for all household crosstables.
     Returns dictionary of glossary DataFrames.
     """
-    # Define categories from generatedHouseholds.py
+    # Define categories from generateHouseholds.py
     hh_compositions = ['1PE','1PA','1FE','1FM-0C','1FM-2C', '1FM-nA','1FC-0C','1FC-2C','1FC-nA','1FL-nA','1FL-2C','1H-nS','1H-nE','1H-nA', '1H-2C']
     ethnicity_categories = ['W1', 'W2', 'W3', 'W4', 'M1', 'M2', 'M3', 'M4', 'A1', 'A2', 'A3', 'A4', 'A5', 'B1', 'B2', 'B3', 'O1', 'O2']
     religion_categories = ['C','B','H','J','M','S','O','N','NS']
@@ -165,7 +165,7 @@ def create_master_glossary(area_code):
     combined_glossary, all_glossaries = create_combined_glossary(individuals_glossaries, households_glossaries)
     
     # Create simple output directory
-    output_dir = os.path.join(current_dir, 'outputs')
+    output_dir = os.path.join(current_dir, '../outputs')
     os.makedirs(output_dir, exist_ok=True)
     
     # Save master glossary

@@ -18,17 +18,19 @@ AREA_CODES = [
     'E02005957'
 ]
 
-def run_command(cmd, description):
+def run_command(cmd, description, working_dir=None):
     """Run a command and handle output"""
     print(f"\n{'='*60}")
     print(f"Running: {description}")
     print(f"Command: {' '.join(cmd)}")
+    if working_dir:
+        print(f"Working directory: {working_dir}")
     print(f"{'='*60}")
     
     start_time = time.time()
     
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True)
+        result = subprocess.run(cmd, capture_output=True, text=True, cwd=working_dir)
         
         end_time = time.time()
         duration = end_time - start_time
@@ -55,12 +57,15 @@ def run_command(cmd, description):
 def main():
     """Main function to run multiple areas"""
     current_dir = os.path.dirname(os.path.abspath(__file__))
+    # Change to parent directory (code/) where the main scripts are located
+    code_dir = os.path.dirname(current_dir)
     
     print("="*80)
     print("RUNNING MULTIPLE AREA CODES FOR GNN POPULATION SYNTHESIS")
     print("="*80)
     print(f"Processing area codes: {', '.join(AREA_CODES)}")
-    print(f"Current directory: {current_dir}")
+    print(f"Utils directory: {current_dir}")
+    print(f"Code directory: {code_dir}")
     
     # Track results
     individuals_results = {}
@@ -72,19 +77,21 @@ def main():
         print(f"PROCESSING AREA CODE: {area_code}")
         print(f"{'='*80}")
         
-        # Run individuals generation
-        individuals_cmd = [sys.executable, 'generatedIndividuals.py', '--area_code', area_code]
+        # Run individuals generation - run from code directory with relative paths
+        individuals_cmd = [sys.executable, 'generateIndividuals.py', '--area_code', area_code]
         individuals_success = run_command(
             individuals_cmd, 
-            f"Individuals Generation for {area_code}"
+            f"Individuals Generation for {area_code}",
+            working_dir=code_dir
         )
         individuals_results[area_code] = individuals_success
         
-        # Run households generation
-        households_cmd = [sys.executable, 'generatedHouseholds.py', '--area_code', area_code]
+        # Run households generation - run from code directory with relative paths
+        households_cmd = [sys.executable, 'generateHouseholds.py', '--area_code', area_code]
         households_success = run_command(
             households_cmd, 
-            f"Households Generation for {area_code}"
+            f"Households Generation for {area_code}",
+            working_dir=code_dir
         )
         households_results[area_code] = households_success
     
@@ -93,8 +100,13 @@ def main():
     print("GENERATING CONVERGENCE AND PERFORMANCE PLOTS")
     print(f"{'='*80}")
     
+    # Run plotting script from Utils directory
     plot_cmd = [sys.executable, 'plotConvergencePerformance.py']
-    plot_success = run_command(plot_cmd, "Convergence and Performance Plotting")
+    plot_success = run_command(
+        plot_cmd, 
+        "Convergence and Performance Plotting",
+        working_dir=current_dir
+    )
     
     # Summary
     print(f"\n{'='*80}")

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Script to run assignHouseholdsHPTuning.py for all 17 area codes,
+Script to run assignHouseholds.py for all 17 area codes,
 performing hyperparameter tuning for household assignment models across all Oxford areas.
 """
 
@@ -18,17 +18,19 @@ AREA_CODES = [
     'E02005957'
 ]
 
-def run_command(cmd, description):
+def run_command(cmd, description, working_dir=None):
     """Run a command and handle output"""
     print(f"\n{'='*60}")
     print(f"Running: {description}")
     print(f"Command: {' '.join(cmd)}")
+    if working_dir:
+        print(f"Working directory: {working_dir}")
     print(f"{'='*60}")
     
     start_time = time.time()
     
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True)
+        result = subprocess.run(cmd, capture_output=True, text=True, cwd=working_dir)
         
         end_time = time.time()
         duration = end_time - start_time
@@ -57,8 +59,8 @@ def check_prerequisites(area_code):
     current_dir = os.path.dirname(os.path.abspath(__file__))
     
     # Check for required input files
-    person_nodes_path = os.path.join(current_dir, f"outputs/individuals_{area_code}/person_nodes.pt")
-    household_nodes_path = os.path.join(current_dir, f"outputs/households_{area_code}/household_nodes.pt")
+    person_nodes_path = os.path.join(current_dir, f"../outputs/individuals_{area_code}/person_nodes.pt")
+    household_nodes_path = os.path.join(current_dir, f"../outputs/households_{area_code}/household_nodes.pt")
     
     missing_files = []
     if not os.path.exists(person_nodes_path):
@@ -71,12 +73,15 @@ def check_prerequisites(area_code):
 def main():
     """Main function to run assignment HP tuning for all areas"""
     current_dir = os.path.dirname(os.path.abspath(__file__))
+    # Change to parent directory (code/) where the main scripts are located
+    code_dir = os.path.dirname(current_dir)
     
     print("="*80)
     print("RUNNING HOUSEHOLD ASSIGNMENT HYPERPARAMETER TUNING FOR ALL AREAS")
     print("="*80)
     print(f"Processing area codes: {', '.join(AREA_CODES)}")
-    print(f"Current directory: {current_dir}")
+    print(f"Utils directory: {current_dir}")
+    print(f"Code directory: {code_dir}")
     print("\nThis script will:")
     print("  • Run hyperparameter tuning for household assignment models")
     print("  • Process all 17 Oxford area codes")
@@ -125,11 +130,12 @@ def main():
         print(f"PROCESSING AREA {i}/{len(successful_areas)}: {area_code}")
         print(f"{'='*80}")
         
-        # Run assignment hyperparameter tuning
-        assignment_cmd = [sys.executable, 'assignHouseholdsHPTuning.py', '--area_code', area_code]
+        # Run assignment hyperparameter tuning from code directory
+        assignment_cmd = [sys.executable, 'assignHouseholds.py', '--area_code', area_code]
         assignment_success = run_command(
             assignment_cmd, 
-            f"Assignment HP Tuning for {area_code}"
+            f"Assignment HP Tuning for {area_code}",
+            working_dir=code_dir
         )
         assignment_results[area_code] = assignment_success
         

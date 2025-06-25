@@ -22,68 +22,69 @@ ALL_OXFORD_AREAS = [
 SCRIPT_OPTIONS = {
     '1': {
         'name': 'Person/Individual Generation',
-        'script': 'generatedIndividuals.py',
+        'script': 'generateIndividuals.py',
         # 'script': 'generatedIndividuals_V4.py',
         'description': 'Generate synthetic individuals with demographic attributes',
         'requires_area': True
     },
     '2': {
         'name': 'Household Generation', 
-        'script': 'generatedHouseholds.py',
+        'script': 'generateHouseholds.py',
         # 'script': 'generatedHouseholds_V3.py',
         'description': 'Generate synthetic households with composition and characteristics',
         'requires_area': True
     },
-    # '3': {
-    #     'name': 'Household Assignment',
-    #     'script': 'assignHouseholds.py', 
-    #     'description': 'Assign individuals to households based on compatibility',
-    #     'requires_area': True
-    # },
     '3': {
         'name': 'Household Assignment HP Tuning',
-        'script': 'assignHouseholdsHPTuning.py',
+        'script': 'assignHouseholds.py',
         'description': 'Hyperparameter tuning for household assignment models',
         'requires_area': True
     },
     '4': {
         'name': 'Create Master Glossary',
-        'script': 'createGlossary.py',
+        'script': 'Utils/createGlossary.py',
         'description': 'Combine all crosstable glossaries into a single master file',
         'requires_area': True
     },
     '5': {
         'name': 'Persons Convergence & Performance Plots',
-        'script': 'plotConvergencePerformance.py',
+        'script': 'Utils/plotConvergencePerformance.py',
         'description': 'Generate convergence and performance plots for individuals/persons only',
         'requires_area': False,
         'plot_type': 'individuals'
     },
     '6': {
         'name': 'Households Convergence & Performance Plots', 
-        'script': 'plotConvergencePerformance.py',
+        'script': 'Utils/plotConvergencePerformance.py',
         'description': 'Generate convergence and performance plots for households only',
         'requires_area': False,
         'plot_type': 'households'
     },
     '7': {
         'name': 'All Convergence & Performance Plots',
-        'script': 'plotConvergencePerformance.py',
+        'script': 'Utils/plotConvergencePerformance.py',
         'description': 'Generate convergence and performance plots for both persons and households',
         'requires_area': False,
         'plot_type': 'both'
     },
     '8': {
         'name': 'Run Multiple Areas (Batch)',
-        'script': 'runMultipleAreas.py',
+        'script': 'Utils/runMultipleAreas.py',
         'description': 'Run individuals and households generation for multiple predefined areas',
         'requires_area': False
     },
     '9': {
         'name': 'Run Assignment HP Tuning (All Areas)',
-        'script': 'runAssignmentHPTuning.py',
+        'script': 'Utils/runAssignmentHPTuning.py',
         'description': 'Run household assignment hyperparameter tuning for all 17 areas',
         'requires_area': False
+    },
+    '10': {
+        'name': 'Model Evaluation',
+        'script': 'evaluation.py',
+        'description': 'Load and evaluate existing model outputs with crosstable comparisons',
+        'requires_area': False,
+        'special_execution': True
     }
 }
 
@@ -96,7 +97,7 @@ def display_menu():
     
     # Group options by type
     generation_options = ['1', '2', '3', '4']
-    analysis_options = ['5', '6', '7', '8', '9']
+    analysis_options = ['5', '6', '7', '8', '9', '10']
     
     print("\n📊 Generation & Processing:")
     for key in generation_options:
@@ -113,7 +114,7 @@ def display_menu():
             print(f"  {key}. {area_req} {value['name']}")
     
     print("\n🔄 Other:")
-    print("  10. Exit")
+    print("  11. Exit")
     
     print(f"\n{'='*60}")
     print("🎯 = Requires area code selection | 🌐 = Processes all areas")
@@ -196,9 +197,9 @@ def main():
     
     while True:
         display_menu()
-        choice = input("\nEnter your choice (1-10): ").strip()
+        choice = input("\nEnter your choice (1-11): ").strip()
         
-        if choice == '10':
+        if choice == '11':
             # print("Thank you for using SP_GNN. Goodbye!")
             break
         elif choice in SCRIPT_OPTIONS:
@@ -238,29 +239,44 @@ def main():
                     print("  • Skip areas with missing input files")
                     print("  • Generate assignment performance plots and analysis")
                     print("  • Create detailed hyperparameter tuning results")
+                elif choice == '10':
+                    print("\nThis will:")
+                    print("  • Load existing model outputs (person_nodes.pt or household_nodes.pt)")
+                    print("  • Allow selection between individuals and households evaluation")
+                    print("  • Show all 17 available Oxford areas for selection")
+                    print("  • Generate crosstable comparison plots (actual vs predicted)")
+                    print("  • Calculate accuracy metrics (R² and RMSE)")
+                    print("  • Save interactive HTML plots to the outputs directory")
                 
-                # confirm = input("\nDo you want to proceed? (y/n): ").strip().lower()
-                # if confirm != 'y':
-                #     continue
-                
-                # Check if script has plot_type parameter
-                plot_type = script_info.get('plot_type')
-                success = run_script(script_info['script'], plot_type=plot_type)
+                # Handle special execution for evaluation script
+                if script_info.get('special_execution'):
+                    try:
+                        # Import and run evaluation script directly
+                        import evaluation
+                        evaluation.main()
+                        success = True
+                    except Exception as e:
+                        print(f"Error running evaluation: {e}")
+                        success = False
+                else:
+                    # Check if script has plot_type parameter
+                    plot_type = script_info.get('plot_type')
+                    success = run_script(script_info['script'], plot_type=plot_type)
             
             if success:
                 input("\nPress Enter to continue...")
             else:
                 input("\nScript execution failed. Press Enter to continue...")
         else:
-            print("Invalid choice. Please enter a number between 1 and 10.")
+            print("Invalid choice. Please enter a number between 1 and 11.")
 
 if __name__ == "__main__":
     # Support command line arguments for automated execution
     parser = argparse.ArgumentParser(description='SP_GNN Synthetic Population Generator')
-    parser.add_argument('--script', choices=['1', '2', '3', '4', '5', '6', '7', '8', '9'], 
-                       help='Script to run (1=Individual, 2=Household, 3=Assignment, 4=Create Master Glossary, 5=Persons Plots, 6=Households Plots, 7=All Plots, 8=Run Multiple Areas, 9=Assignment HP Tuning All Areas)')
+    parser.add_argument('--script', choices=['1', '2', '3', '4', '5', '6', '7', '8', '9', '10'], 
+                       help='Script to run (1=Individual, 2=Household, 3=Assignment, 4=Create Master Glossary, 5=Persons Plots, 6=Households Plots, 7=All Plots, 8=Run Multiple Areas, 9=Assignment HP Tuning All Areas, 10=Model Evaluation)')
     parser.add_argument('--area_code', choices=ALL_OXFORD_AREAS,
-                       help='Oxford area code to use (not required for scripts 4, 5, 6, 7, 8, 9)')
+                       help='Oxford area code to use (not required for scripts 4, 5, 6, 7, 8, 9, 10)')
     
     args = parser.parse_args()
     
@@ -277,8 +293,18 @@ if __name__ == "__main__":
             success = run_script(script_info['script'], args.area_code)
         else:
             # Script doesn't require area code
-            plot_type = script_info.get('plot_type')
-            success = run_script(script_info['script'], plot_type=plot_type)
+            if script_info.get('special_execution'):
+                # Handle special execution for evaluation script
+                try:
+                    import evaluation
+                    evaluation.main()
+                    success = True
+                except Exception as e:
+                    print(f"Error running evaluation: {e}")
+                    success = False
+            else:
+                plot_type = script_info.get('plot_type')
+                success = run_script(script_info['script'], plot_type=plot_type)
         
         if not success:
             sys.exit(1)

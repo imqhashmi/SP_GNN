@@ -8,8 +8,8 @@ import argparse
 
 def parse_arguments():
     parser = argparse.ArgumentParser(description='Plot convergence and performance data for all areas')
-    parser.add_argument('--output_dir', type=str, default='outputs',
-                       help='Output directory containing area folders (default: outputs)')
+    parser.add_argument('--output_dir', type=str, default='../outputs',
+                       help='Output directory containing area folders (default: ../outputs)')
     parser.add_argument('--plot_type', type=str, choices=['individuals', 'households', 'both'], 
                        default='both', help='Type of plots to generate (default: both)')
     return parser.parse_args()
@@ -939,7 +939,7 @@ def main():
         print(f"  - households_{area_code}")
     
     if not individuals_folders and not households_folders:
-        print("No output folders found. Please run generatedIndividuals.py and/or generatedHouseholds.py first.")
+        print("No output folders found. Please run generateIndividuals.py and/or generateHouseholds.py first.")
         return
     
     # Create convergence plots
