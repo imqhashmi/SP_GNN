@@ -1,2 +1,2 @@
-area_code,num_households,training_time_seconds,learning_rate,hidden_channels,final_accuracy
-E02005951,2592,194.30156564712524,0.0005,256,0.9965006709098816
+area_code,num_households,training_time_seconds,learning_rate,hidden_channels,final_accuracy,rmse
+E02005951,2592,23.43191695213318,0.001,64,0.9399301111698151,10.302538924099863

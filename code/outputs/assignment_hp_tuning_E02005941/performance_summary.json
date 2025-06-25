@@ -2,24 +2,21 @@
     "area_code": "E02005941",
     "num_persons": 7209,
     "num_households": 2835,
-    "total_combinations_tested": 6,
-    "total_training_time_seconds": 3956.0898451805115,
-    "total_training_time_str": "1:05:56",
-    "num_epochs_per_combination": 100,
+    "total_combinations_tested": 1,
+    "total_training_time_seconds": 1513.7836887836456,
+    "total_training_time_str": "0:25:13",
+    "num_epochs_per_combination": 200,
     "learning_rates_tested": [
-        0.001,
-        0.0005,
-        0.0001
+        0.001
     ],
     "hidden_dims_tested": [
-        64,
-        128
+        64
     ],
     "best_learning_rate": 0.001,
-    "best_hidden_channels": 128,
-    "best_loss": 3.155648708343506,
-    "best_religion_compliance": 0.842280482729921,
-    "best_ethnicity_compliance": 0.8195311416285199,
-    "best_size_accuracy": 0.6971475142624287,
-    "best_overall_accuracy": 0.7863197128736231
+    "best_hidden_channels": 64,
+    "best_loss": 3.17348051071167,
+    "best_religion_compliance": 0.888334026910806,
+    "best_ethnicity_compliance": 0.8974892495491746,
+    "best_size_accuracy": 0.6916267942583731,
+    "best_overall_accuracy": 0.8258166902394514
 }
