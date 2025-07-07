@@ -189,11 +189,6 @@ hhcomp_df = pd.read_csv(os.path.join(current_dir, '../data/preprocessed-data/ind
 hhcomp_by_religion_df = pd.read_csv(os.path.join(current_dir, '../data/preprocessed-data/crosstables/HH_composition_by_religion_Updated.csv'))
 hhcomp_by_ethnicity_df = pd.read_csv(os.path.join(current_dir, '../data/preprocessed-data/crosstables/HH_composition_by_ethnicity_Updated.csv'))
 
-# Define the Oxford areas
-# oxford_areas = ['E02005924']
-# oxford_areas = ['E02005923']
-# oxford_areas = ['E02005925']
-
 # Use the area code passed from command line
 oxford_areas = [selected_area_code]
 print(f"Processing Oxford area: {oxford_areas[0]}")
@@ -1100,7 +1095,7 @@ def plotly_crosstable_comparison(
 ):
     """
     Creates Plotly subplots comparing actual vs. predicted distributions for crosstables.
-    Now includes a geo plot positioned above the first row crosstable.
+    # Now includes a geo plot positioned above the first row crosstable. - COMMENTED OUT
     
     Parameters:
     actual_dfs - Dictionary of crosstable names to actual dataframes
@@ -1157,21 +1152,22 @@ def plotly_crosstable_comparison(
         )
         rmse_data[idx] = rmse_val
     
-    # Calculate number of rows: 1 for geoplot/legend + rows for crosstables
+    # Calculate number of rows - SIMPLIFIED WITHOUT GEO PLOT
     crosstable_rows = (num_plots + num_cols - 1) // num_cols
-    total_rows = 1 + crosstable_rows  # 1 for geo/legend + crosstable rows
+    # total_rows = 1 + crosstable_rows  # 1 for geo/legend + crosstable rows - COMMENTED OUT
+    total_rows = crosstable_rows  # Only crosstable rows
     
-    # Create subplot specifications with small top row for geo/legend and larger rows for crosstables
+    # Create subplot specifications - SIMPLIFIED WITHOUT GEO PLOT
     specs = []
     
-    # First row: geo plot (left) and legend space (right)
-    geo_row_specs = []
-    for col in range(num_cols):
-        if col == 0:
-            geo_row_specs.append({"type": "geo"})  # Geo plot in first column
-        else:
-            geo_row_specs.append(None)  # Empty space for other columns
-    specs.append(geo_row_specs)
+    # # First row: geo plot (left) and legend space (right) - COMMENTED OUT
+    # geo_row_specs = []
+    # for col in range(num_cols):
+    #     if col == 0:
+    #         geo_row_specs.append({"type": "geo"})  # Geo plot in first column
+    #     else:
+    #         geo_row_specs.append(None)  # Empty space for other columns
+    # specs.append(geo_row_specs)
     
     # Remaining rows: crosstable plots
     for row in range(crosstable_rows):
@@ -1180,15 +1176,16 @@ def plotly_crosstable_comparison(
             row_specs.append({"type": "xy"})
         specs.append(row_specs)
     
-    # Row heights: larger for geo/legend, normal for crosstables
+    # Row heights - SIMPLIFIED WITHOUT GEO PLOT
     subplot_height = 400 if show_keys else 300
-    geo_row_height = 0.35  # 25% of total height for geo/legend row (increased from 15%)
-    crosstable_row_height = (1.0 - geo_row_height) / crosstable_rows  # Remaining height divided by crosstable rows
+    # geo_row_height = 0.35  # 25% of total height for geo/legend row (increased from 15%) - COMMENTED OUT
+    # crosstable_row_height = (1.0 - geo_row_height) / crosstable_rows  # Remaining height divided by crosstable rows - COMMENTED OUT
     
-    row_heights = [geo_row_height] + [crosstable_row_height] * crosstable_rows
+    # row_heights = [geo_row_height] + [crosstable_row_height] * crosstable_rows - COMMENTED OUT
     
-    # Create titles: empty for geo row, accuracy info for crosstable rows
-    all_titles = [""] * num_cols  # Empty titles for geo row
+    # Create titles - SIMPLIFIED WITHOUT GEO ROW
+    # all_titles = [""] * num_cols  # Empty titles for geo row - COMMENTED OUT
+    all_titles = []  # Start with empty list
     
     # Add crosstable titles with accuracy and RMSE information
     main_plot_idx = 0
@@ -1207,13 +1204,14 @@ def plotly_crosstable_comparison(
         cols=num_cols,
         subplot_titles=all_titles,
         specs=specs,
-        row_heights=row_heights,
-        vertical_spacing=0.20,  # Even more increased vertical spacing between crosstable subplots for better separation
-        horizontal_spacing=0.12
+        # row_heights=row_heights, - COMMENTED OUT
+        vertical_spacing=0.20,  # Significantly increased vertical spacing for better subplot separation
+        horizontal_spacing=0.20  # Increased horizontal spacing for better subplot separation
     )
     
     for idx, crosstable_key in enumerate(keys_list):
-        row = (idx // num_cols) + 2  # +2 because first row (index 1) is for geo/legend
+        # row = (idx // num_cols) + 2  # +2 because first row (index 1) is for geo/legend - COMMENTED OUT
+        row = (idx // num_cols) + 1  # +1 for 1-based indexing without geo row
         col = (idx % num_cols) + 1
         
         actual_df = actual_dfs[crosstable_key]
@@ -1243,45 +1241,41 @@ def plotly_crosstable_comparison(
                     # Create actual category combination label
                     category_labels.append(f"{row_idx} {col_idx}")
         
-        # Use actual category labels as x-axis labels
-        x_labels = category_labels
-        
-        # Create continuous positions for bars (no gaps) but keep actual labels
+        # Use index numbers as x-axis labels instead of actual category labels
         continuous_positions = list(range(1, len(actual_vals) + 1))
-        actual_labels = category_labels
         
-        # Show ALL labels for all values displayed in the plot
-        visible_labels = [str(label) for label in actual_labels]
+        # Show index numbers as labels
+        visible_labels = [str(i) for i in continuous_positions]
         visible_positions = continuous_positions
         
-        # Create bar traces using continuous positions
+        # Create bar traces using continuous positions - LEGEND COMMENTED OUT
         actual_trace = go.Bar(
             x=continuous_positions,
             y=actual_vals,
-            name='Actual' if idx == 0 else None,
+            # name='Actual' if idx == 0 else None, - COMMENTED OUT
             marker_color='red',
             opacity=0.7,
-            showlegend=idx == 0  # Only show legend for first subplot
+            showlegend=False  # Legend disabled
         )
         
         predicted_trace = go.Bar(
             x=continuous_positions,
             y=predicted_vals,
-            name='Predicted' if idx == 0 else None,
+            # name='Predicted' if idx == 0 else None, - COMMENTED OUT
             marker_color='blue',
             opacity=0.7,
-            showlegend=idx == 0  # Only show legend for first subplot
+            showlegend=False  # Legend disabled
         )
         
         fig.add_trace(actual_trace, row=row, col=col)
         fig.add_trace(predicted_trace, row=row, col=col)
         
-        # Update x-axis to show actual category labels at continuous positions
+        # Update x-axis to show index numbers
         fig.update_xaxes(
             ticktext=visible_labels,
             tickvals=visible_positions,
-            tickangle=90,  # Angle the labels for better readability
-            tickfont=dict(size=12),  # Increased font size for better readability
+            tickangle=90,  # 90-degree angle for index numbers
+            tickfont=dict(size=10),  # Standard font size for index numbers
             # title_text=titles[idx],  # Add x-axis title as the crosstable name
             row=row,
             col=col
@@ -1294,53 +1288,53 @@ def plotly_crosstable_comparison(
             col=col
         )
     
-    # Add geo plot to the first row, first column
-    geo_traces, geo_layout = create_geo_plot_trace(selected_area_code, current_dir)
+    # # Add geo plot to the first row, first column - COMMENTED OUT
+    # geo_traces, geo_layout = create_geo_plot_trace(selected_area_code, current_dir)
+    # 
+    # if geo_traces and geo_layout:
+    #     for trace in geo_traces:
+    #         fig.add_trace(trace, row=1, col=1)
+    #     
+    #     # Update geo subplot layout
+    #     fig.update_geos(
+    #         geo_layout,
+    #         row=1, col=1
+    #     )
+    #     
+    #     # Add area code label below the geo plot
+    #     fig.add_annotation(
+    #         text=f"Area Code: {selected_area_code}",
+    #         xref="paper", yref="paper",
+    #         x=0.50, y=0.7,  # Global position centered below the geo plot
+    #         xanchor="center", yanchor="top",
+    #         showarrow=False,
+    #         font=dict(size=12, color="black"),
+    #         bgcolor="rgba(255,255,255,0.8)",
+    #         bordercolor="black",
+    #         borderwidth=1
+    #     )
     
-    if geo_traces and geo_layout:
-        for trace in geo_traces:
-            fig.add_trace(trace, row=1, col=1)
-        
-        # Update geo subplot layout
-        fig.update_geos(
-            geo_layout,
-            row=1, col=1
-        )
-        
-        # Add area code label below the geo plot
-        fig.add_annotation(
-            text=f"Area Code: {selected_area_code}",
-            xref="paper", yref="paper",
-            x=0.50, y=0.7,  # Global position centered below the geo plot
-            xanchor="center", yanchor="top",
-            showarrow=False,
-            font=dict(size=12, color="black"),
-            bgcolor="rgba(255,255,255,0.8)",
-            bordercolor="black",
-            borderwidth=1
-        )
-    
-    # Update layout with proper sizing
+    # Update layout with proper sizing - SIMPLIFIED WITHOUT GEO PLOT AND LEGEND
     fig.update_layout(
-        height=300 + subplot_height * crosstable_rows,  # Increased height for geo row + crosstable rows with better spacing
-        showlegend=True,
+        height=subplot_height * crosstable_rows,  # Standard height for crosstable rows only
+        showlegend=False,  # Legend disabled
         barmode='group',
         plot_bgcolor="white",
         autosize=True,
         margin=dict(
-            b=400 if show_keys else 300,  # Further increased bottom margin for all rotated labels
-            t=100,  # Increased top margin for better spacing
+            b=200,  # Increased bottom margin for 90-degree rotated index numbers
+            t=80,  # Reduced top margin since no legend needed
             l=60,
             r=60
         ),
-        legend=dict(
-            orientation="h",  # Horizontal legend
-            yanchor="top",
-            y=0.95,  # Position in the geo row area
-            xanchor="center", 
-            x=0.7,  # Position to the right of geo plot
-            bgcolor='rgba(255,255,255,0.9)'
-        )
+        # legend=dict(  # LEGEND CONFIGURATION COMMENTED OUT
+        #     orientation="h",  # Horizontal legend
+        #     yanchor="top",
+        #     y=1.0,  # Position at the top without geo row
+        #     xanchor="center", 
+        #     x=0.5,  # Centered horizontally
+        #     bgcolor='rgba(255,255,255,0.9)'
+        # )
     )
 
     fig.update_yaxes(

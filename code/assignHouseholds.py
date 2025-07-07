@@ -118,9 +118,6 @@ persons_file_path = os.path.join(current_dir, f"./outputs/individuals_{selected_
 households_file_path = os.path.join(current_dir, f"./outputs/households_{selected_area_code}/household_nodes.pt")
 hh_size_df = pd.read_csv(os.path.join(current_dir, '../data/preprocessed-data/individuals/HH_size.csv'))
 
-# Define the Oxford areas
-# oxford_areas = ['E02005924']
-
 # Use the area code passed from command line
 oxford_areas = [selected_area_code]
 print(f"Processing Oxford area: {oxford_areas[0]}")
@@ -140,7 +137,7 @@ household_nodes = household_nodes.to(device)
 print(f"Moved person_nodes and household_nodes to {device}")
 
 # Define the household composition categories and mapping
-hh_compositions = ['1PE','1PA','1FE','1FM-0C','1FM-2C', '1FM-nA','1FC-0C','1FC-2C','1FC-nA','1FL-nA','1FL-2C','1H-nS','1H-nE','1H-nA', '1H-2C']
+hh_compositions = ['1PE', '1PA', '1FE', '1FM-0C', '1FM-2C', '1FM-nA', '1FC-0C', '1FC-2C', '1FC-nA', '1FL-nA', '1FL-2C', '1H-nS', '1H-nE', '1H-nA', '1H-2C']
 hh_map = {category: i for i, category in enumerate(hh_compositions)}
 reverse_hh_map = {v: k for k, v in hh_map.items()}  # Reverse mapping to decode
 
@@ -401,9 +398,9 @@ def plot_assignment_errors(final_assignments, household_sizes, person_nodes, hou
     print(f"Assignment errors plot saved to: {error_plot_path}")
 
 def plot_accuracy_over_epochs(epoch_numbers, religion_accuracies, ethnicity_accuracies, output_dir):
-    """Plot accuracy over epochs similar to the provided image"""
+    """Plot accuracy over epochs with religion and ethnicity graphs side by side"""
     
-    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 10))
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 6))
     
     # Plot (a) Religion
     bars1 = ax1.bar(epoch_numbers[::10], religion_accuracies[::10], color='steelblue', alpha=0.7, width=8)
