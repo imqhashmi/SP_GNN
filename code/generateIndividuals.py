@@ -1289,7 +1289,7 @@ def plotly_crosstable_comparison(
     
     # Row heights: larger for geo/legend, normal for crosstables
     subplot_height = 400 if show_keys else 300
-    geo_row_height = 0.25  # 25% of total height for geo/legend row (increased from 15%)
+    geo_row_height = 0.40  # 40% of total height for geo/legend row (increased for larger geoplot)
     crosstable_row_height = (1.0 - geo_row_height) / crosstable_rows  # Remaining height divided by crosstable rows
     
     row_heights = [geo_row_height] + [crosstable_row_height] * crosstable_rows
@@ -1315,7 +1315,7 @@ def plotly_crosstable_comparison(
         subplot_titles=all_titles,
         specs=specs,
         row_heights=row_heights,
-        vertical_spacing=0.15,  # Further increased vertical spacing between crosstable subplots for label clearance
+        vertical_spacing=0.10,  # Further increased vertical spacing between crosstable subplots for label clearance
         horizontal_spacing=0.10
     )
     
@@ -1351,15 +1351,11 @@ def plotly_crosstable_comparison(
                     # Create actual category combination label (col_idx contains age-sex, row_idx contains ethnicity/religion/marital)
                     category_labels.append(f"{col_idx} {row_idx}")
         
-        # Use actual category labels as x-axis labels
-        x_labels = category_labels
-        
-        # Create continuous positions for bars (no gaps) but keep actual labels
+        # Use index numbers as x-axis labels instead of actual category labels
         continuous_positions = list(range(1, len(actual_vals) + 1))
-        actual_labels = category_labels
         
-        # Show ALL labels for all values displayed in the plot
-        visible_labels = [str(label) for label in actual_labels]
+        # Show index numbers as labels
+        visible_labels = [str(i) for i in continuous_positions]
         visible_positions = continuous_positions
         
         # Create bar traces using continuous positions
@@ -1384,12 +1380,12 @@ def plotly_crosstable_comparison(
         fig.add_trace(actual_trace, row=row, col=col)
         fig.add_trace(predicted_trace, row=row, col=col)
         
-        # Update x-axis to show actual category labels at continuous positions
+        # Update x-axis to show index numbers
         fig.update_xaxes(
             ticktext=visible_labels,
             tickvals=visible_positions,
-            tickangle=90,  # Angle the labels for better readability
-            tickfont=dict(size=12),  # Increased font size for better readability
+            tickangle=90,  # 90-degree angle for index numbers
+            tickfont=dict(size=10),  # Standard font size for index numbers
             # title_text=titles[idx],  # Add x-axis title as the crosstable name
             row=row,
             col=col
@@ -1419,7 +1415,7 @@ def plotly_crosstable_comparison(
         fig.add_annotation(
             text=f"Area Code: {selected_area_code}",
             xref="paper", yref="paper",
-            x=0.50, y=0.8,  # Global position centered below the geo plot
+            x=0.50, y=0.7,  # Global position centered below the larger geo plot
             xanchor="center", yanchor="top",
             showarrow=False,
             font=dict(size=12, color="black"),
@@ -1436,7 +1432,7 @@ def plotly_crosstable_comparison(
         plot_bgcolor="white",
         autosize=True,
         margin=dict(
-            b=400 if show_keys else 300,  # Further increased bottom margin for all rotated labels
+            b=200,  # Increased bottom margin for 90-degree rotated index numbers
             t=100,  # Increased top margin for better spacing
             l=60,
             r=60
