@@ -35,7 +35,7 @@ SCRIPT_OPTIONS = {
         'requires_area': True
     },
     '3': {
-        'name': 'Household Assignment HP Tuning',
+        'name': 'Household Assignment',
         'script': 'assignHouseholds.py',
         'description': 'Hyperparameter tuning for household assignment models',
         'requires_area': True
