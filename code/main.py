@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Main script to orchestrate all SP_GNN model scripts.
-Allows user to select which model to run and which Oxford area to use.
+Allows user to select which model to run and which Oxford or Greater London area to use.
 """
 
 import os
@@ -9,7 +9,7 @@ import sys
 import subprocess
 import argparse
 
-# Define all Oxford areas
+# Oxford pilot areas (17 MSOAs present in the data)
 ALL_OXFORD_AREAS = [
     'E02005940', 'E02005941', 'E02005942', 'E02005943',
     'E02005944', 'E02005945', 'E02005946', 'E02005947',
@@ -18,6 +18,14 @@ ALL_OXFORD_AREAS = [
     'E02005957'
 ]
 # Areas E02007116 and E02007021 are not in the data
+
+# All 983 Greater London MSOA codes, plus the paper's five-area representative
+# subset, from the canonical list in Utils/greaterLondonAreas.py.
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), 'Utils'))
+from greaterLondonAreas import GREATER_LONDON_MSOA_AREAS as ALL_LONDON_AREAS
+from greaterLondonAreas import REPRESENTATIVE_SUBSET
+
+ALL_VALID_AREAS = list(dict.fromkeys(ALL_OXFORD_AREAS + list(ALL_LONDON_AREAS)))
 
 SCRIPT_OPTIONS = {
     '1': {
@@ -120,35 +128,93 @@ def display_menu():
     print("🎯 = Requires area code selection | 🌐 = Processes all areas")
     print("="*60)
 
-def select_area():
-    """Allow user to select an Oxford area."""
+def select_region():
+    """Choose Oxford (pilot) or Greater London before picking an MSOA."""
     while True:
-        print("\n" + "="*60)
+        print("\n" + "=" * 60)
+        print("Select region")
+        print("=" * 60)
+        print(f"  1. Oxford ({len(ALL_OXFORD_AREAS)} MSOA areas)")
+        print(f"  2. Greater London ({len(ALL_LONDON_AREAS)} MSOA areas)")
+        choice = input("\nSelect 1-2, or 'q' to return: ").strip()
+        if choice.lower() == 'q':
+            return None
+        if choice == '1':
+            return 'oxford'
+        if choice == '2':
+            return 'london'
+        print("Please enter 1, 2, or 'q'.")
+
+def select_oxford_area():
+    """Allow user to select an Oxford area, or type any known MSOA code."""
+    while True:
+        print("\n" + "=" * 60)
         print("Available Oxford Area Codes:")
-        print("="*60)
-        
-        # Display all areas with indices
+        print("=" * 60)
         for i, area in enumerate(ALL_OXFORD_AREAS, 1):
             print(f"{i:2d}. {area}")
-        
-        print(f"\nTotal areas available: {len(ALL_OXFORD_AREAS)}")
-        print("="*60)
-        
-        try:
-            choice = input(f"\nSelect area number (1-{len(ALL_OXFORD_AREAS)}) or 'q' to return to main menu: ").strip()
-            
-            if choice.lower() == 'q':
-                return None
-            
-            area_num = int(choice)
-            if 1 <= area_num <= len(ALL_OXFORD_AREAS):
-                selected_area = ALL_OXFORD_AREAS[area_num - 1]
-                print(f"\nSelected area: {selected_area}")
-                return selected_area
-            else:
-                print(f"Please enter a number between 1 and {len(ALL_OXFORD_AREAS)}")
-        except ValueError:
-            print("Please enter a valid number or 'q' to quit")
+        print(f"\nTotal Oxford areas: {len(ALL_OXFORD_AREAS)}")
+        print("Or type any MSOA code in full (e.g. E02005940).")
+        print("=" * 60)
+
+        choice = input(
+            f"\nSelect 1-{len(ALL_OXFORD_AREAS)}, enter an area code, or 'q' to return: "
+        ).strip()
+
+        if choice.lower() == 'q':
+            return None
+        if choice.isdigit() and 1 <= int(choice) <= len(ALL_OXFORD_AREAS):
+            selected_area = ALL_OXFORD_AREAS[int(choice) - 1]
+            print(f"\nSelected area: {selected_area}")
+            return selected_area
+        code = choice.upper()
+        if code in ALL_VALID_AREAS:
+            print(f"\nSelected area: {code}")
+            return code
+        print(f"'{choice}' is not a recognised Oxford or Greater London MSOA code.")
+
+def select_london_area():
+    """Select a Greater London MSOA: type a code directly, or pick from the subset.
+
+    With 983 areas a numbered list is unusable, so the paper's five-area
+    representative subset is offered as a shortlist and any other code can be
+    typed in full. Codes are validated against the canonical list.
+    """
+    subset_notes = ['smallest', 'lower quartile', 'median', 'upper quartile', 'largest']
+    while True:
+        print("\n" + "=" * 60)
+        print(f"Greater London: {len(ALL_LONDON_AREAS)} MSOA areas available")
+        print("=" * 60)
+        print("\nRepresentative subset (the areas reported in the paper):")
+        for i, (area, note) in enumerate(zip(REPRESENTATIVE_SUBSET, subset_notes), 1):
+            print(f"  {i}. {area}  ({note})")
+        print("\nOr type any Greater London MSOA code in full (e.g. E02000001).")
+        choice = input(
+            f"\nSelect 1-{len(REPRESENTATIVE_SUBSET)}, enter an area code, "
+            f"or 'q' to return: "
+        ).strip()
+
+        if choice.lower() == 'q':
+            return None
+        if choice.isdigit() and 1 <= int(choice) <= len(REPRESENTATIVE_SUBSET):
+            selected_area = REPRESENTATIVE_SUBSET[int(choice) - 1]
+            print(f"\nSelected area: {selected_area}")
+            return selected_area
+        code = choice.upper()
+        if code in ALL_LONDON_AREAS:
+            print(f"\nSelected area: {code}")
+            return code
+        print(f"'{choice}' is not a Greater London MSOA code. "
+              f"Codes look like E02000001; see code/Utils/greaterLondonAreas.py for the list.")
+
+def select_area():
+    """Select region, then an MSOA within that region."""
+    region = select_region()
+    if region is None:
+        return None
+    if region == 'oxford':
+        return select_oxford_area()
+    return select_london_area()
 
 def run_script(script_name, area_code=None, plot_type=None):
     """Run the selected script with or without area code depending on requirements."""
@@ -243,7 +309,7 @@ def main():
                     print("\nThis will:")
                     print("  • Load existing model outputs (person_nodes.pt or household_nodes.pt)")
                     print("  • Allow selection between individuals and households evaluation")
-                    print("  • Show all 17 available Oxford areas for selection")
+                    print("  • Select an Oxford or Greater London area")
                     print("  • Generate crosstable comparison plots (actual vs predicted)")
                     print("  • Calculate accuracy metrics (R² and RMSE)")
                     print("  • Save interactive HTML plots to the outputs directory")
@@ -275,8 +341,9 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='SP_GNN Synthetic Population Generator')
     parser.add_argument('--script', choices=['1', '2', '3', '4', '5', '6', '7', '8', '9', '10'], 
                        help='Script to run (1=Individual, 2=Household, 3=Assignment, 4=Create Master Glossary, 5=Persons Plots, 6=Households Plots, 7=All Plots, 8=Run Multiple Areas, 9=Assignment HP Tuning All Areas, 10=Model Evaluation)')
-    parser.add_argument('--area_code', choices=ALL_OXFORD_AREAS,
-                       help='Oxford area code to use (not required for scripts 4, 5, 6, 7, 8, 9, 10)')
+    parser.add_argument('--area_code', choices=ALL_VALID_AREAS, metavar='AREA_CODE',
+                       help='Oxford or Greater London MSOA code, e.g. E02005940 or E02000001 '
+                            '(not required for scripts 4, 5, 6, 7, 8, 9, 10)')
     
     args = parser.parse_args()
     
@@ -288,7 +355,8 @@ if __name__ == "__main__":
         if script_info.get('requires_area', True):
             if not args.area_code:
                 print(f"Error: Script '{script_info['name']}' requires an area code.")
-                print(f"Available area codes: {', '.join(ALL_OXFORD_AREAS)}")
+                print(f"Oxford: {len(ALL_OXFORD_AREAS)} areas; Greater London: {len(ALL_LONDON_AREAS)} "
+                      f"(see code/Utils/greaterLondonAreas.py)")
                 sys.exit(1)
             success = run_script(script_info['script'], args.area_code)
         else:
@@ -310,4 +378,4 @@ if __name__ == "__main__":
             sys.exit(1)
     else:
         # Otherwise, run interactive mode
-        main() 
+        main()
